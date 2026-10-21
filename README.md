@@ -10,7 +10,9 @@
 - **LENS**：固定显示拍照、人像、录像、夜景、大师、镜子、全景、高像素、微距、星空、文档矫正入口。列表不再等待相机探测；实际能否打开对应模式仍取决于设备相机。
 - **侧边栏**：接入智能侧边栏设置，提供卡包独立开关、浮标位置、长度、透明度、自动隐藏与预览。卡包详细设置中的蓝色链接可直接打开超级卡包浮标设置。
 
-默认卡片顺序为 Pay、记忆、券码、LENS。原子工作台尚未接入。
+默认卡片顺序为 Pay、记忆、券码、LENS、东华校园卡。原子工作台尚未接入。
+
+东华校园卡支持在卡片设置中保存、更新和验证授权链接，原生显示付款二维码与条形码；展示时定时刷新，隐藏时清除码图。使用方法与接入协议见 [东华校园卡](docs/dhu-campus-card.md)。
 
 ## 安装
 
@@ -65,11 +67,13 @@ python tools/rebuild_assets.py
 
 ## Actions 与发布
 
-[构建工作流](.github/workflows/build.yml) 使用固定工具链构建完整统一包，比较 `ci/reference-apk.json` 中的本地基准，并额外核对官方签名证书。所有普通 ZIP 项都会按解压后的内容比较，包括 DEX、资源、插件和 native 库；只排除 APK 签名元数据。详见 [产物一致性](docs/产物一致性.md)。
+[构建工作流](.github/workflows/build.yml) 使用固定工具链构建完整统一包。主分支推送或手动运行使用 `release` Environment 中的固定签名，并核对 `ci/signing-certificate.sha256`；PR 构建使用临时调试签名，不访问该环境。每次构建都会校验输入、重建补丁资产、检查链接、执行对齐并验签。
+
+默认不将新源码产物与旧版本基准强行比较。确认本地产物并更新 `ci/reference-apk.json` 后，可在手动运行时启用 `compare_reference`，按 ZIP 解压内容核对 DEX、资源、插件及 native 库，仅排除 APK 签名元数据。详见 [产物一致性](docs/产物一致性.md)。
 
 Actions 产物包含统一 APK、SHA256 和核对报告，不再构建或上传 Magisk/KernelSU 后端模块 ZIP。
 
-官方签名密钥保存在 Actions Secret `SUPERCARD_KEYSTORE_BASE64`，不会提交到仓库。PR 构建和 fork 不会取得官方签名。
+本仓库签名密钥保存在 `release` Environment secret `SUPERCARD_KEYSTORE_BASE64` 中，值为 keystore 文件的完整 Base64 内容；密钥文件不提交到 Git。当前密钥别名为 `androiddebugkey`，库密码与私钥密码均为 `android`，与服务器构建保持一致。本仓库签名与上游官方签名不同，不能直接覆盖上游官方安装包。
 
 修改源码后，应先完成本地验证，再更新 `ci/reference-apk.json`。Actions 通过后下载其产物，与同一提交的本地产物再次核对，再发布 Release。构建成功不能替代真机功能验证。
 

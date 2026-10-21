@@ -20,6 +20,7 @@ android {
     }
 }
 dependencies {
+    implementation("com.google.zxing:core:3.5.3")
     implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
     implementation("org.luckypray:dexkit:2.0.7")
     // Supplied by Vector in scoped processes; do not bundle framework API classes.

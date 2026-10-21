@@ -8,6 +8,10 @@ try {
     if ($Offline) { $prepareArgs += '--offline' }
     python @prepareArgs
     if ($LASTEXITCODE -ne 0) { throw '构建输入校验失败' }
+    $dhuTestArgs = @('tools/test_dhu_pay.py')
+    if ($Offline) { $dhuTestArgs += '--offline' }
+    python @dhuTestArgs
+    if ($LASTEXITCODE -ne 0) { throw '东华校园卡协议与编码测试失败' }
     python tools/test_pay_users.py
     if ($LASTEXITCODE -ne 0) { throw 'PAY 用户路由离线测试失败' }
     python tools/test_pay_startup.py

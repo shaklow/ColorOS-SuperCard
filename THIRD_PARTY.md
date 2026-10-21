@@ -17,6 +17,8 @@
 
 ## 开源依赖
 
+- [ZXing core 3.5.3](https://github.com/zxing/zxing/tree/zxing-3.5.3)：Apache-2.0，用于校园卡二维码和 CODE128 编码；依赖哈希固定于 Gradle 校验清单。
+- [JSON-java 20240303](https://github.com/stleary/JSON-java)：仅用于离线校园卡测试，应用运行时使用 Android 自带的 `org.json`；测试下载固定 SHA-256。
 - [DexKit 2.0.7](https://github.com/LuckyPray/DexKit/tree/2.0.7)：DEX 特征查询，原项目许可证与源码见该版本。
 - [libxposed API 102](https://github.com/libxposed/api)：由 Vector 运行时提供，项目仅 `compileOnly` 编译引用。
 - [AndroidHiddenApiBypass](https://github.com/LSPosed/AndroidHiddenApiBypass)：隐藏 API 访问辅助。

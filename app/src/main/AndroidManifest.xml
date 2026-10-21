@@ -12,10 +12,15 @@
     </queries>
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <application android:label="超级卡包" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:allowBackup="false">
+    <application android:label="超级卡包" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:allowBackup="false"
+        android:networkSecurityConfig="@xml/dhu_network_security">
+        <provider android:name=".DhuPayProvider" android:authorities="dev.local.supercardhost.dhu-pay"
+            android:exported="true" />
+        <activity android:name=".DhuPaySettingsActivity" android:exported="true" />
         <provider android:name=".RootDisplayBootstrapProvider"
             android:authorities="dev.local.supercardhost.root-bootstrap" android:exported="false" />
         <receiver android:name=".RootDisplayStartReceiver" android:exported="true"

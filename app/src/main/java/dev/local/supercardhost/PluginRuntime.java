@@ -26,6 +26,7 @@ public final class PluginRuntime {
     private static float authAlpha;
     private static android.view.View securePaymentWindow;
     private static boolean paymentWindowWasSecure;
+    private static boolean paySecureRequested, campusSecureRequested;
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
     public static synchronized void start(Application host, Context module) {
@@ -63,6 +64,8 @@ public final class PluginRuntime {
                 }
             });
             LensRuntimeBridge.install(VectorEntry.current, loader);
+            try { DhuRuntimeBridge.install(VectorEntry.current, loader); }
+            catch (Throwable error) { Log.e("SuperCardDhu", "Campus card adapter unavailable", error); }
             try { installCoupon(VectorEntry.current, host, loader); }
             catch (Throwable error) { Log.e("SuperCardCoupon", "Coupon adapter unavailable", error); }
             if (systemHost) LensRuntimeBridge.prepareConfiguration(host);
@@ -181,6 +184,19 @@ public final class PluginRuntime {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             MAIN.post(() -> setPaymentSecure(secure)); return;
         }
+        paySecureRequested = secure;
+        applyPaymentSecure(paySecureRequested || campusSecureRequested);
+    }
+
+    static void setCampusSecure(boolean secure) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            MAIN.post(() -> setCampusSecure(secure)); return;
+        }
+        campusSecureRequested = secure;
+        applyPaymentSecure(paySecureRequested || campusSecureRequested);
+    }
+
+    private static void applyPaymentSecure(boolean secure) {
         try {
             android.view.View window = securePaymentWindow;
             if (secure) {

@@ -60,6 +60,8 @@ final class OriginalAppCompat {
         }
         HostSettingsDefaults.install(xposed, target);
         LensRuntimeBridge.install(xposed, target);
+        try { DhuRuntimeBridge.install(xposed, target); }
+        catch (Throwable error) { Log.e("SuperCardDhu", "Campus settings adapter unavailable", error); }
         CardPreviewCompat.install(xposed, target);
         SettingsLinkCompat.install(xposed, target);
         CardSettingsFilter.install(xposed, target);

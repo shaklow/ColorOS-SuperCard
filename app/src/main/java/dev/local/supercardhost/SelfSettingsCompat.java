@@ -49,7 +49,11 @@ public final class SelfSettingsCompat {
         }
         if (name.equals("bindImageCardView")) {
             android.widget.ImageView previous = SelfPreviewCompat.begin((android.widget.ImageView) args[0], args[2]);
-            try { return call(original, receiver, args); }
+            try {
+                if (DhuCardConfiguration.bindPreview((android.widget.ImageView) args[0],
+                        (android.widget.FrameLayout) args[1], args[2])) return null;
+                return call(original, receiver, args);
+            }
             finally { SelfPreviewCompat.end(previous); }
         }
         if (name.equals("createViewToBitmap")) {
@@ -100,6 +104,7 @@ public final class SelfSettingsCompat {
             if (id != 0) return id;
         }
         if (name.equals("getStringByResName")) {
+            if (DhuCardConfiguration.TITLE_RESOURCE.equals(args[1])) return "东华校园卡";
             if ("master".equals(args[1])) return "大师模式";
             if (type.endsWith("CameraCardUtils")) {
                 Context context = (Context) args[0];
@@ -252,6 +257,7 @@ public final class SelfSettingsCompat {
         String type = card == null ? null : (String) invoke(card, "getType");
         ((View) field(holder, "buttonSet")).setVisibility("memory".equals(type) || "staging".equals(type)
                 ? View.GONE : View.VISIBLE);
+        DhuCardConfiguration.bindSettingsButton(holder, item);
     }
 
     private static boolean removedPay(String type) { return "vivo_scan".equals(type) || "vivo_pay".equals(type); }
@@ -276,6 +282,7 @@ public final class SelfSettingsCompat {
         JSONObject config = new JSONObject(filtered);
         LensSettingsValues.applyDefaultCardChoices(config);
         LensSettingsValues.addMasterFunction(config, false);
+        DhuCardConfiguration.defaults(config);
         return config.toString();
     }
 
@@ -317,6 +324,7 @@ public final class SelfSettingsCompat {
             if (migrated != null) config = migrated;
         }
         filterPay(config);
+        config = DhuCardConfiguration.finishInitialization(initializer, config);
         List<?> cards = (List<?>) invoke(config, "getCards");
         if (cards == null) return config;
         if (newCoupon) {
