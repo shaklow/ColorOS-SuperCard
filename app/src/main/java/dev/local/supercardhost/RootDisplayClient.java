@@ -21,7 +21,7 @@ import android.util.Log;
 import android.view.Surface;
 import java.lang.reflect.Method;
 
-/** Narrow root backend for the original secure payment display; no payment data is handled here. */
+/** Narrow root backend for fixed PAY/LENS displays; no payment or camera data is handled here. */
 public final class RootDisplayClient {
     private static final String ACTION = "dev.local.supercardhost.ROOT_DISPLAY_SERVICE";
     private static final String DESCRIPTOR = "dev.local.supercardhost.RootDisplay.v1";
@@ -154,7 +154,7 @@ public final class RootDisplayClient {
 
     static synchronized VirtualDisplay createCamera(int width, int height, int density, Surface surface) {
         // Same trusted, own-content, destroy-on-removal display policy as the original card.
-        // The daemon still permits only one display and the authenticated SystemUI client.
+        // The daemon permits one display per fixed card name and only the authenticated SystemUI client.
         return createNamed("SuperCard_Lens", width, height, density, surface, 19917, false);
     }
 
