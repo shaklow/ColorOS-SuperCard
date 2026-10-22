@@ -18,6 +18,7 @@ import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
+import org.robolectric.annotation.GraphicsMode;
 
 /** Inflate real MDC widgets/resources, including the framework-only cross-loader contract. */
 @RunWith(RobolectricTestRunner.class)
@@ -67,7 +68,9 @@ public class DhuCardSurfaceTest {
         assertNull(((ImageView) tag(root, "barcode")).getDrawable());
     }
 
-    @Test public void paymentAreaFitsHostPreviewBoundsWithLargerText() {
+    // Measure with the same native text engine as screenshots and the installed Android UI.
+    @Test @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    public void paymentAreaFitsHostPreviewBoundsWithLargerText() {
         Context app = RuntimeEnvironment.getApplication();
         Configuration config = new Configuration(app.getResources().getConfiguration());
         config.fontScale = 1.3f;

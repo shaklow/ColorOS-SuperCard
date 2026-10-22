@@ -44,6 +44,24 @@ public final class SettingsStartupTest extends Instrumentation {
                     throw new AssertionError("Campus window must be secure before rendering");
                 if (cards.getWindow().getDecorView().findViewWithTag("dhu_settings") == null)
                     throw new AssertionError("Real campus surface missing");
+                // Also measure the small OEM card's exact bounds using Android's actual
+                // large-font metrics, separately from the Activity's larger card slot.
+                android.content.res.Configuration config = new android.content.res.Configuration(cards.getResources().getConfiguration());
+                config.fontScale = 1.3f;
+                try {
+                    android.content.Context appearance = cards.getWindow().getDecorView().findViewWithTag("dhu_settings")
+                            .getContext().createConfigurationContext(config);
+                    Class<?> factory = appearance.getClassLoader().loadClass("dev.local.supercardui.DhuCardSurface");
+                    View surface = (View) factory.getMethod("create", android.content.Context.class).invoke(null, appearance);
+                    float density = cards.getResources().getDisplayMetrics().density;
+                    surface.measure(View.MeasureSpec.makeMeasureSpec(Math.round(280 * density), View.MeasureSpec.EXACTLY),
+                            View.MeasureSpec.makeMeasureSpec(Math.round(450 * density), View.MeasureSpec.EXACTLY));
+                    surface.layout(0, 0, surface.getMeasuredWidth(), surface.getMeasuredHeight());
+                    View qr = surface.findViewWithTag("dhu_qr"), barcode = surface.findViewWithTag("dhu_barcode");
+                    if (qr.getHeight() < 128 * density || barcode.getWidth() < 200 * density)
+                        throw new AssertionError("Large-font scan area too small on Android: QR=" + qr.getHeight() / density);
+                } catch (ReflectiveOperationException error) { throw new AssertionError("Large-font surface failed", error); }
+
             });
             ActivityMonitor settingsMonitor = addMonitor(pkg + ".HostActivity", null, false);
             runOnMainSync(() -> cards.getWindow().getDecorView().findViewWithTag("native_settings").performClick());
