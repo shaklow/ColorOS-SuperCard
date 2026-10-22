@@ -1,6 +1,6 @@
 # M3 Expressive 设置界面
 
-第一阶段统一设置首页、运行状态与 PAY 设置、校园卡授权设置。桌面入口使用 `HostActivity`；“管理卡片”保留原厂卡片管理页，“手势与唤出”保留现有手势设置。其他卡片的重绘不在本阶段内。
+第一阶段统一设置首页、运行状态与 PAY 设置、校园卡授权设置。桌面与 LSPosed 的 `MODULE_SETTINGS` 入口均使用 `HostActivity`；“管理卡片”保留原厂卡片管理页，“手势与唤出”保留现有手势设置。其他卡片的重绘不在本阶段内。
 
 ## 设计规范
 
@@ -42,3 +42,17 @@ M3E 控件仍在私有 `assets/dhu-ui.apk` 内。通过原有隔离 ClassLoader 
 UI 测试覆盖 API 31 / 36、真实 Material 组件、全部设置入口、九项开关初始禁用、权限详情展开、用户选择回调、授权输入保护，以及窄窗口、大字体和深浅色布局。
 
 宿主状态测试覆盖诊断类型校验、虚拟屏未就绪但服务已连接、分身消失、损坏用户列表，以及保存读回不一致。CI 同时运行宿主与私有 UI 模块的单元测试。实际 Root 授权、SystemUI 连接和手机键盘/系统栏仍需目标 ColorOS 真机验收。
+
+宿主生命周期测试覆盖三个 Activity 在 API 31 / 36 上的首次创建、恢复和销毁，包括私有 UI 不可用时的提示页。修复前六个用例都在 `PhoneWindow.getInsetsController()` 报空 DecorView；系统栏外观现于 `onPostCreate` 中设置，并通过 `decorView` 获取控制器。此项回归与 Android 35 完整 APK 上捕获的启动异常一致。
+
+安装后的启动测试与 Robolectric 布局测试分开执行。使用 Android 31+ 测试设备，先安装统一 APK，再安装同一次构建、相同签名的测试 APK：
+
+```sh
+./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+python tools/unified-prototype/build.py --version-code 20 --version-name 0.2.13-settings-test --sign
+adb install -r tools/unified-prototype/out/supercard-unified-prototype.apk
+adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+python tools/test_settings_startup.py
+```
+
+`SettingsStartupTest` 检查桌面和 LSPosed 的入口解析，真正启动三个 Activity，等待首次绘制与异步状态回调，确认控件已布局且来自私有 `DelegateLastClassLoader`。私有界面加载失败、只显示兜底提示时测试会失败。测试不提交授权链接或更改 PAY 开关。CI 在硬件加速的 Android 36 模拟器上运行这项测试，安装的就是对应构建产物中的统一 APK。

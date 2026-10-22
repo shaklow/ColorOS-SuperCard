@@ -45,8 +45,15 @@ abstract class M3eSettingsActivity : Activity() {
         val dark = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
         setTheme(if (dark) android.R.style.Theme_Material_NoActionBar else android.R.style.Theme_Material_Light_NoActionBar)
         super.onCreate(state)
+    }
+
+    override fun onPostCreate(state: Bundle?) {
+        super.onPostCreate(state)
+        val dark = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
         val mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
-        window.insetsController?.setSystemBarsAppearance(if (dark) 0 else mask, mask)
+        // PhoneWindow.getInsetsController() dereferences a null DecorView before
+        // setContentView. Apply appearance after page creation, including fallback.
+        window.decorView.windowInsetsController?.setSystemBarsAppearance(if (dark) 0 else mask, mask)
     }
 
     private fun unavailable(error: Throwable) {

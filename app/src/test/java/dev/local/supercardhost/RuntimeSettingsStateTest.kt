@@ -8,7 +8,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [31, 36])
+@Config(sdk = [31, 36], manifest = Config.NONE)
 class RuntimeSettingsStateTest {
     private fun diagnostics() = Bundle().apply {
         putBoolean("systemUiHook", true); putBoolean("rootDisplayReady", false)

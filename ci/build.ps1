@@ -18,7 +18,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'PAY 启动退避离线测试失败' }
     python tools/rebuild_assets.py
     if ($LASTEXITCODE -ne 0) { throw '补丁 DEX 再生与现有资产不一致' }
-    $gradleArgs = @(':app:clean', ':dhu-ui:testDebugUnitTest', ':app:testDebugUnitTest', ':app:assembleDebug', '--no-daemon', '--console', 'plain')
+    $gradleArgs = @(':app:clean', ':dhu-ui:testDebugUnitTest', ':app:testDebugUnitTest', ':app:assembleDebugAndroidTest', ':app:assembleDebug', '--no-daemon', '--console', 'plain', '--stacktrace')
     if ($Offline) { $gradleArgs += '--offline' }
     # Windows PowerShell 5 treats compiler stderr notes as terminating errors.
     # Gradle's exit code determines success; keep its diagnostics in the log.

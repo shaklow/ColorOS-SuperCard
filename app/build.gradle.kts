@@ -22,12 +22,14 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1-host-probe"
+        testInstrumentationRunner = "dev.local.supercardhost.SettingsStartupTest"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    testOptions.unitTests.isIncludeAndroidResources = true
+    // State/lifecycle tests need framework resources only. Real archive loading
+    // is tested against the installed unified APK by SettingsStartupTest.
 }
 dependencies {
     implementation("com.google.zxing:core:3.5.3")
