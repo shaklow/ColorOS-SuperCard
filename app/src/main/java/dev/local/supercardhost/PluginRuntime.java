@@ -64,6 +64,8 @@ public final class PluginRuntime {
                 }
             });
             LensRuntimeBridge.install(VectorEntry.current, loader);
+            try { PayChromeBridge.install(VectorEntry.current, host, loader); }
+            catch (Throwable error) { Log.w("SuperCardPayUi", "Original PAY appearance retained", error); }
             try { DhuRuntimeBridge.install(VectorEntry.current, loader); }
             catch (Throwable error) { Log.e("SuperCardDhu", "Campus card adapter unavailable", error); }
             try { installCoupon(VectorEntry.current, host, loader); }

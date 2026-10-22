@@ -91,6 +91,16 @@ final class DhuMaterialUi {
     }
 
     static View lens(Context host) throws Exception { return createView(host, "createLens"); }
+
+    static void preparePay(Context host) throws Exception {
+        archiveContext(host);
+        factory.getMethod("stylePay", Context.class, String.class, View[].class);
+    }
+
+    static void stylePay(Context host, String part, View[] views) throws Exception {
+        Context appearance = archiveContext(host);
+        factory.getMethod("stylePay", Context.class, String.class, View[].class).invoke(null, appearance, part, views);
+    }
     static void renderLens(View root, android.os.Bundle values) throws Exception {
         factory.getMethod("renderLens", View.class, android.os.Bundle.class).invoke(null, root, values);
     }

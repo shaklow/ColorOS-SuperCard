@@ -31,6 +31,8 @@ public final class DhuCardSurface {
     public static View createLens(Context resources) { return LensCardSurface.create(resources); }
     public static void renderLens(View root, android.os.Bundle values) { LensCardSurface.render(root, values); }
 
+    public static void stylePay(Context resources, String part, View[] views) { PayCardAppearance.style(resources, part, views); }
+
     public static View createSettings(Context resources, String page) { return SettingsSurface.create(resources, page); }
     public static void renderSettings(View root, android.os.Bundle values) { SettingsSurface.render(root, values); }
     public static void chooseSettings(View root, String title, String[] labels, int selected, java.util.function.IntConsumer action) {
