@@ -28,6 +28,8 @@ import android.view.WindowManager;
 import android.widget.FrameLayout;
 import java.io.FileInputStream;
 import java.lang.reflect.Method;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
@@ -188,10 +190,10 @@ public final class SettingsStartupTest extends Instrumentation {
                 if (!view.isAvailable()) throw new AssertionError("Lens texture unavailable");
                 view.getSurfaceTexture().setDefaultBufferSize(600, 900);
                 Surface surface = new Surface(view.getSurfaceTexture()); output.set(surface);
-                // Public, own-content, trusted, destroy-on-removal. Secure root display
-                // creation is a separate ROM boundary and is not emulated by this test.
+                // Use the production touch/focus/group/rotation/removal policy, without
+                // SECURE. Secure root creation remains a separate target-ROM boundary.
                 display.set(target.getSystemService(DisplayManager.class).createVirtualDisplay(
-                        "SuperCard_Lens_Test", 600, 900, 240, surface, 1 | 8 | 1024 | 256));
+                        "SuperCard_Lens_Test", 600, 900, 240, surface, 19917 & ~DisplayManager.VIRTUAL_DISPLAY_FLAG_SECURE));
             });
             int id = display.get().getDisplay().getDisplayId();
             if (id <= 0) throw new AssertionError("Lens selected the main display");
@@ -203,12 +205,22 @@ public final class SettingsStartupTest extends Instrumentation {
             activity = monitor.waitForActivityWithTimeout(10_000);
             if (activity == null || activity.getDisplay().getDisplayId() != id)
                 throw new AssertionError("Lens activity escaped to the main display");
-            waitForIdleSync(); SystemClock.sleep(500); waitForIdleSync();
             Activity current = activity;
-            int[] location = new int[2];
+            CountDownLatch laidOut = new CountDownLatch(1);
+            AtomicReference<View> control = new AtomicReference<>();
             main(() -> {
                 View button = current.getWindow().getDecorView().findViewWithTag("show_cards");
-                if (button == null || button.getWidth() <= 0) throw new AssertionError("Lens test control missing");
+                if (button == null) throw new AssertionError("Lens test control missing");
+                control.set(button);
+                if (button.getWidth() > 0 && button.getHeight() > 0) laidOut.countDown();
+                else button.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> {
+                    if (r > l && b > t) laidOut.countDown();
+                });
+            });
+            if (!laidOut.await(10, TimeUnit.SECONDS)) throw new AssertionError("Lens control did not finish secondary-display layout");
+            int[] location = new int[2];
+            main(() -> {
+                View button = control.get();
                 button.setOnClickListener(v -> clicks.incrementAndGet());
                 button.getLocationOnScreen(location);
                 location[0] += button.getWidth() / 2; location[1] += button.getHeight() / 2;
