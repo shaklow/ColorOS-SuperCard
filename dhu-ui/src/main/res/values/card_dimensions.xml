@@ -1,0 +1,13 @@
+<resources>
+    <!-- Shared floating surfaces only; feature-specific scan areas and OEM geometry stay local. -->
+    <dimen name="card_surface_corner">28dp</dimen>
+    <dimen name="card_inner_corner">20dp</dimen>
+    <dimen name="card_content_padding">16dp</dimen>
+    <dimen name="card_action_gap">8dp</dimen>
+    <dimen name="card_settings_target">48dp</dimen>
+    <dimen name="card_settings_glyph">24dp</dimen>
+    <dimen name="card_settings_corner">24dp</dimen>
+    <dimen name="card_header_icon">36dp</dimen>
+    <dimen name="card_header_text_gap">10dp</dimen>
+    <dimen name="card_action_min_height">52dp</dimen>
+</resources>

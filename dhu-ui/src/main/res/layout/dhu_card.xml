@@ -2,15 +2,15 @@
     xmlns:app="http://schemas.android.com/apk/res-auto" style="@style/Dhu.Card"
     android:layout_width="match_parent" android:layout_height="match_parent">
     <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent"
-        android:orientation="vertical" android:padding="16dp">
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
+        android:orientation="vertical" android:padding="@dimen/card_content_padding">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/card_settings_target"
             android:gravity="center_vertical" android:orientation="horizontal">
-            <com.google.android.material.imageview.ShapeableImageView android:layout_width="36dp"
-                android:layout_height="36dp" android:padding="8dp" android:src="@drawable/dhu_ic_school"
+            <com.google.android.material.imageview.ShapeableImageView android:layout_width="@dimen/card_header_icon"
+                android:layout_height="@dimen/card_header_icon" android:padding="8dp" android:src="@drawable/dhu_ic_school"
                 android:backgroundTint="?attr/colorPrimaryContainer" android:background="@android:color/white"
                 app:tint="?attr/colorOnPrimaryContainer" app:shapeAppearanceOverlay="@style/ShapeAppearance.Material3.Corner.Medium" />
             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
-                android:layout_weight="1" android:layout_marginStart="10dp" android:orientation="vertical">
+                android:layout_weight="1" android:layout_marginStart="@dimen/card_header_text_gap" android:orientation="vertical">
                 <com.google.android.material.textview.MaterialTextView android:layout_width="match_parent"
                     android:layout_height="wrap_content" android:text="@string/dhu_title" android:textSize="18sp"
                     android:textAppearance="?attr/textAppearanceTitleMedium" android:maxLines="1" android:ellipsize="end" />
@@ -19,7 +19,7 @@
                     android:textColor="?attr/colorOnSurfaceVariant" android:maxLines="1" android:ellipsize="end" />
             </LinearLayout>
             <dev.local.supercardui.CardIconButton
-                android:tag="dhu_settings" android:layout_width="48dp" android:layout_height="48dp"
+                android:tag="dhu_settings" android:layout_width="@dimen/card_settings_target" android:layout_height="@dimen/card_settings_target"
                 android:contentDescription="@string/dhu_settings" app:icon="@drawable/dhu_ic_settings" />
         </LinearLayout>
         <com.google.android.material.card.MaterialCardView style="@style/Dhu.CodeSurface"

@@ -31,7 +31,7 @@ object LensCardSurface {
                 for (index in 0 until childCount) getChildAt(index).layoutParams = GridLayout.LayoutParams().apply {
                     this.width = 0; this.height = -2
                     columnSpec = GridLayout.spec(index % columns, 1f); rowSpec = GridLayout.spec(index / columns)
-                    setMargins(if (index % columns == 0) 0 else d.dp(8), 0, 0, d.dp(8))
+                    setMargins(if (index % columns == 0) 0 else d.size(R.dimen.card_action_gap), 0, 0, d.size(R.dimen.card_action_gap))
                 }
                 super.onMeasure(width, height)
             }
@@ -42,20 +42,23 @@ object LensCardSurface {
         val root: View
 
         init {
-            val body = d.column().apply { setPadding(d.dp(16), d.dp(16), d.dp(16), d.dp(16)) }
+            val body = d.column().apply {
+                val padding = d.size(R.dimen.card_content_padding)
+                setPadding(padding, padding, padding, padding)
+            }
             val heading = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL; isBaselineAligned = false }
             heading.addView(ImageView(context).apply {
                 setImageDrawable(AppCompatResources.getDrawable(context, R.drawable.lens_ic_camera))
                 imageTintList = ColorStateList.valueOf(d.color(androidx.appcompat.R.attr.colorPrimary))
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            }, LinearLayout.LayoutParams(d.dp(36), d.dp(36)))
+            }, LinearLayout.LayoutParams(d.size(R.dimen.card_header_icon), d.size(R.dimen.card_header_icon)))
             heading.addView(d.column().apply {
                 addView(d.text("LENS", 18, bold = true))
                 addView(d.text("选择拍摄模式", 12, secondary = true))
-            }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = d.dp(10) })
+            }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = d.size(R.dimen.card_header_text_gap) })
             heading.addView(d.icon("lens_settings", "LENS 设置", R.drawable.dhu_ic_settings).apply { tag = "lens_settings" })
             body.addView(heading, LinearLayout.LayoutParams(-1, -2))
-            body.addView(modes, LinearLayout.LayoutParams(-1, -2).apply { topMargin = d.dp(16) })
+            body.addView(modes, LinearLayout.LayoutParams(-1, -2).apply { topMargin = d.size(R.dimen.card_content_padding) })
             body.addView(empty, LinearLayout.LayoutParams(-1, -2))
             val scroll = ScrollView(context).apply {
                 isFillViewport = false; isSaveEnabled = false
