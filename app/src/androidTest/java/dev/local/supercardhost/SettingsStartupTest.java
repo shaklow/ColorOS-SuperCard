@@ -45,9 +45,10 @@ public final class SettingsStartupTest extends Instrumentation {
             checkPage("HostActivity", "open_runtime", "de.robv.android.xposed.category.MODULE_SETTINGS");
             checkPage("HostToolsActivity", "toggle_wx_scan", null);
             checkPage("DhuPaySettingsActivity", "url", null);
+            new CardManagementCheck(this).run();
             checkFloatingWindow();
             checkFloatingSessions();
-            result.putString("stream", "Settings startup: 4 entry points passed\nFloating cards: window embedding passed\nFloating lifecycle: detach/reattach passed\nLens display: embedded activity and touch passed\nRoot display: callback wrapper passed\n");
+            result.putString("stream", "Settings startup: 4 entry points passed\nCard management: persistence, ordering and legacy entry passed\nFloating cards: window embedding passed\nFloating lifecycle: detach/reattach passed\nLens display: embedded activity and touch passed\nRoot display: callback wrapper passed\n");
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
             result.putString("stream", android.util.Log.getStackTraceString(error));

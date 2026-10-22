@@ -96,6 +96,18 @@ final class DhuMaterialUi {
         return (View) MaterialUiArchive.create(host, Operation.SETTINGS, page);
     }
 
+    static View cardManagement(Context host) throws Exception {
+        return (View) MaterialUiArchive.create(host, Operation.CARD_MANAGEMENT);
+    }
+
+    static void renderCardManagement(View root, android.os.Bundle state) throws Exception {
+        MaterialUiArchive.update(root, Operation.RENDER_CARD_MANAGEMENT, state);
+    }
+
+    static void bindCardManagement(View root, java.util.function.Consumer<android.os.Bundle> action) throws Exception {
+        MaterialUiArchive.update(root, Operation.BIND_CARD_MANAGEMENT, action);
+    }
+
     static void renderSettings(View root, android.os.Bundle values) throws Exception {
         MaterialUiArchive.update(root, Operation.RENDER_SETTINGS, values);
     }

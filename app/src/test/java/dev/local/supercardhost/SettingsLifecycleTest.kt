@@ -15,6 +15,7 @@ class SettingsLifecycleTest {
     @Test fun launcherCompletesItsFirstLifecycle() = launch(HostActivity::class.java)
     @Test fun runtimeSettingsCompletesItsFirstLifecycle() = launch(HostToolsActivity::class.java)
     @Test fun campusSettingsCompletesItsFirstLifecycle() = launch(DhuPaySettingsActivity::class.java)
+    @Test fun cardManagementCompletesItsFirstLifecycle() = launch(CardManagementActivity::class.java)
 
     @Test fun cachedShortcutRedirectCompletesItsFirstLifecycle() = launch(NativeCardsActivity::class.java)
 

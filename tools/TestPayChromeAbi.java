@@ -20,7 +20,7 @@ public final class TestPayChromeAbi {
             for (var entry : Collections.list(zip.entries())) {
                 if (!entry.getName().matches("classes[0-9]*\\.dex")) continue;
                 var dex = DexBackedDexFile.fromInputStream(Opcodes.forApi(36), new BufferedInputStream(zip.getInputStream(entry)));
-                for (ClassDef type : dex.getClasses()) if ((Set.of(CARD, ADAPTER, HOLDER, "Lcom/vivo/card/framework/virtual/VirtualViewManager;", "Lcom/vivo/card/cards/cardpay/virtual/PayVirtualViewManager;").contains(type.getType()) || type.getType().equals("Lcom/vivo/card/cards/cardcamera/handler/CameraCardEventHandler;") || type.getType().equals("Lcom/vivo/card/cards/base/view/BaseCardView;") || type.getType().equals("Lcom/vivo/card/model/CardSetBean$CardBean$FunctionBean;"))) {
+                for (ClassDef type : dex.getClasses()) if ((Set.of(CARD, ADAPTER, HOLDER, "Lcom/vivo/card/framework/virtual/VirtualViewManager;", "Lcom/vivo/card/cards/cardpay/virtual/PayVirtualViewManager;").contains(type.getType()) || type.getType().equals("Lcom/vivo/card/cards/cardcamera/handler/CameraCardEventHandler;") || type.getType().equals("Lcom/vivo/card/cards/base/view/BaseCardView;") || type.getType().equals("Lcom/vivo/card/model/CardSetBean$CardBean$FunctionBean;") || type.getType().equals("Lcom/vivo/card/data/CardDataInitializer;") || type.getType().equals("Lcom/vivo/card/CardPerfContext;"))) {
                     if (classes.put(type.getType(), type) != null) throw new AssertionError("Duplicate PAY class");
                 }
             }
@@ -64,15 +64,25 @@ public final class TestPayChromeAbi {
             requireMethod(virtual, "handleActivityResumed", "(Landroid/content/ComponentName;)V"); checks++;
             requireMethod(classes.get("Lcom/vivo/card/cards/cardpay/virtual/PayVirtualViewManager;"), "release", "()V"); checks++;
             requireMethod(classes.get("Lcom/vivo/card/cards/cardpay/virtual/PayVirtualViewManager;"), "launchPayment", "(Ljava/lang/String;[ILandroid/content/Intent;)V"); checks++;
+            ClassDef initializer = classes.get("Lcom/vivo/card/data/CardDataInitializer;");
+            ClassDef perf = classes.get("Lcom/vivo/card/CardPerfContext;");
+            requireMethod(initializer, "getInstance", "(Landroid/content/Context;)Lcom/vivo/card/data/CardDataInitializer;", true); checks++;
+            requireMethod(initializer, "init", "()Lcom/vivo/card/model/CardSetBean;"); checks++;
+            for (String setter : List.of("setOriginContext", "setPerfContext")) {
+                requireMethod(perf, setter, "(Landroid/content/Context;)V", true); checks++;
+            }
             System.out.println("Floating card ABI: " + checks + " real bundled entries verified.");
         }
     }
     private static void requireMethod(ClassDef type, String name, String signature) {
+        requireMethod(type, name, signature, false);
+    }
+    private static void requireMethod(ClassDef type, String name, String signature, boolean isStatic) {
         if (type == null) throw new AssertionError("PAY class missing");
         int found = 0;
         for (Method method : type.getMethods()) {
             String descriptor = "(" + method.getParameterTypes().stream().map(Object::toString).collect(Collectors.joining()) + ")" + method.getReturnType();
-            if (name.equals(method.getName()) && signature.equals(descriptor) && (method.getAccessFlags() & 8) == 0) found++;
+            if (name.equals(method.getName()) && signature.equals(descriptor) && ((method.getAccessFlags() & 8) != 0) == isStatic) found++;
         }
         if (found != 1) throw new AssertionError("PAY method changed: " + type.getType() + "->" + name + signature);
     }

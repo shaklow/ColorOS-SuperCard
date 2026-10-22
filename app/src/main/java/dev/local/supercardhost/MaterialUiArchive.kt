@@ -13,6 +13,7 @@ import java.io.File
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.util.function.IntConsumer
+import java.util.function.Consumer
 
 /** Shared private UI boundary. Cache code/assets, never a host, Activity, theme or View. */
 internal object MaterialUiArchive {
@@ -23,6 +24,9 @@ internal object MaterialUiArchive {
         EXPANDED("createExpanded", View::class.java, Context::class.java),
         LENS("createLens", View::class.java, Context::class.java),
         SETTINGS("createSettings", View::class.java, Context::class.java, String::class.java),
+        CARD_MANAGEMENT("createCardManagement", View::class.java, Context::class.java),
+        RENDER_CARD_MANAGEMENT("renderCardManagement", Void.TYPE, View::class.java, Bundle::class.java),
+        BIND_CARD_MANAGEMENT("bindCardManagement", Void.TYPE, View::class.java, Consumer::class.java),
         STYLE_PAY("stylePay", Void.TYPE, Context::class.java, String::class.java, Array<View>::class.java),
         RENDER_LENS("renderLens", Void.TYPE, View::class.java, Bundle::class.java),
         RENDER_SETTINGS("renderSettings", Void.TYPE, View::class.java, Bundle::class.java),

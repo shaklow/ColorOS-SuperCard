@@ -165,12 +165,14 @@ def manifest(out: Path, version: int, version_name: str) -> None:
     app.set(A + 'extractNativeLibs', 'false')
     # Manifest package changed, so shorthand components must be fully qualified.
     for component in app:
-        name = component.get(A + 'name', '')
-        if name.startswith('.'): component.set(A + 'name', 'dev.local.supercardhost' + name)
+        for attribute in ('name', 'targetActivity'):
+            name = component.get(A + attribute, '')
+            if name.startswith('.'): component.set(A + attribute, 'dev.local.supercardhost' + name)
+    aliases = {node.get(A + 'name') for node in app.findall('activity-alias')}
     inventory = []
     for component in original_app:
         name = component.get(A + 'name', '')
-        keep = component.tag == 'meta-data' or (component.tag == 'activity' and
+        keep = component.tag == 'meta-data' or (component.tag == 'activity' and name not in aliases and
                     (name.startswith('com.vivo.card.setting.') or name == 'com.vivo.card.ui.BaseActivity'))
         inventory.append({'tag': component.tag, 'name': name, 'included': keep,
                           'authorities': component.get(A + 'authorities', '')})
