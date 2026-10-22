@@ -28,6 +28,15 @@ public final class DhuCardSurface {
         return inflater(context).inflate(R.layout.dhu_expanded, null, false);
     }
 
+    public static View createSettings(Context resources, String page) { return SettingsSurface.create(resources, page); }
+    public static void renderSettings(View root, android.os.Bundle values) { SettingsSurface.render(root, values); }
+    public static void chooseSettings(View root, String title, String[] labels, int selected, java.util.function.IntConsumer action) {
+        SettingsSurface.choose(root, title, labels, selected, action);
+    }
+    public static void confirmSettings(View root, String title, String message, Runnable action) {
+        SettingsSurface.confirm(root, title, message, action);
+    }
+
     /** A host AppCompat Factory2 would otherwise instantiate its own incompatible widgets. */
     public static LayoutInflater inflater(Context context) { return new UiInflater(context); }
 

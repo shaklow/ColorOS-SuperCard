@@ -27,6 +27,7 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    testOptions.unitTests.isIncludeAndroidResources = true
 }
 dependencies {
     implementation("com.google.zxing:core:3.5.3")
@@ -34,6 +35,8 @@ dependencies {
     implementation("org.luckypray:dexkit:2.0.7")
     // Supplied by Vector in scoped processes; do not bundle framework API classes.
     compileOnly("io.github.libxposed:api:102.0.0")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.16.1")
 }
 
 // Keep MDC/AndroidX classes and their 0x7f resources inside one private archive.

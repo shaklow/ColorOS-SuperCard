@@ -184,14 +184,14 @@ def manifest(out: Path, version: int, version_name: str) -> None:
     if not any(node.get(A + 'name') == 'android.permission.QUERY_ALL_PACKAGES'
                for node in host.findall('uses-permission')):
         host.insert(1, ET.Element('uses-permission', {A + 'name': 'android.permission.QUERY_ALL_PACKAGES'}))
-    settings = next(node for node in app.findall('activity')
-                    if node.get(A + 'name') == 'com.vivo.card.setting.CardSettingActivity')
+    launcher = next(node for node in app.findall('activity')
+                    if node.get(A + 'name') == 'dev.local.supercardhost.HostActivity')
     for activity in app.findall('activity'):
         for entry in list(activity.findall('intent-filter')):
             if any(category.get(A + 'name') == 'android.intent.category.LAUNCHER'
                    for category in entry.findall('category')):
                 activity.remove(entry)
-                settings.append(entry)
+                launcher.append(entry)
     # Original authorities/services remain out of the shell; only audited settings
     # activities are added. The host's private transfer boundaries stay identical.
     (out / 'manifest-inventory.json').write_text(json.dumps(inventory, ensure_ascii=False, indent=2), encoding='utf-8')

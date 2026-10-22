@@ -17,7 +17,7 @@
 
 ## 开源依赖
 
-- [Material Components for Android 1.14.0](https://github.com/material-components/material-components-android/tree/1.14.0)：Apache-2.0，提供校园卡 M3 Expressive 主题与组件；连同其 AndroidX 依赖封装在独立界面模块中。
+- [Material Components for Android 1.14.0](https://github.com/material-components/material-components-android/tree/1.14.0)：Apache-2.0，提供校园卡与设置页的 M3 Expressive 主题及组件；连同其 AndroidX 依赖封装在独立界面模块中。
 - [Robolectric 4.16.1](https://github.com/robolectric/robolectric/tree/robolectric-4.16.1)、JUnit 4.13.2：仅用于 JVM 界面测试，不进入安装包。
 - [ZXing core 3.5.3](https://github.com/zxing/zxing/tree/zxing-3.5.3)：Apache-2.0，用于校园卡二维码和 CODE128 编码；依赖哈希固定于 Gradle 校验清单。
 - [JSON-java 20240303](https://github.com/stleary/JSON-java)：仅用于离线校园卡测试，应用运行时使用 Android 自带的 `org.json`；测试下载固定 SHA-256。
