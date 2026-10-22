@@ -26,6 +26,13 @@ public final class VectorEntry extends XposedModule {
 
     @Override
     public void onPackageReady(PackageReadyParam param) {
+        if ("com.finshell.wallet".equals(param.getPackageName()) && param.isFirstPackage()) {
+            // The wallet's AppComponentFactory may replace the default loader.
+            // Native account/ticket reflection needs the final application loader.
+            try { WalletCouponBridge.install(this, param.getClassLoader()); }
+            catch (Throwable error) { Log.e(TAG, "Unable to install wallet bridge", error); }
+            return;
+        }
         if ("com.coloros.smartsidebar".equals(param.getPackageName()) && param.isFirstPackage()) {
             try {
                 NativeFloatSettings.install(this, param.getClassLoader());
@@ -38,10 +45,6 @@ public final class VectorEntry extends XposedModule {
     @Override
     public void onPackageLoaded(PackageLoadedParam param) {
         try {
-            if ("com.finshell.wallet".equals(param.getPackageName()) && param.isFirstPackage()) {
-                WalletCouponBridge.install(this, param.getDefaultClassLoader());
-                return;
-            }
             if ("com.oplus.aimemory".equals(param.getPackageName()) && param.isFirstPackage()) {
                 MemoryImportBridge.install(this, param.getDefaultClassLoader());
                 return;

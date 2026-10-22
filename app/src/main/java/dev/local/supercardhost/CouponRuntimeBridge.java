@@ -399,8 +399,9 @@ public final class CouponRuntimeBridge {
                         description = "解锁后会从钱包更新当前账号的券码";
                     }
                     case "unavailable", "codes_unavailable" -> {
-                        title = "券码暂不可用";
-                        description = "暂时无法连接钱包，可打开钱包查看，或下次展开卡包时重试";
+                        String reason = CouponRefreshCoordinator.failureReason(host);
+                        title = WalletConnectionStatus.title(reason);
+                        description = WalletConnectionStatus.description(reason);
                     }
                     case "partial" -> {
                         title = "部分券暂不支持";

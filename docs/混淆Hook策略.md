@@ -26,7 +26,7 @@
 
 | 目标 | 加载入口 | 当前用途 |
 | --- | --- | --- |
-| `com.finshell.wallet` | `onPackageLoaded` | 原钱包授权状态、票券发现与实时详情读取 |
+| `com.finshell.wallet` | `onPackageReady` | 使用最终应用加载器读取原钱包授权状态、票券发现与实时详情 |
 | `com.oplus.aimemory` | `onPackageLoaded` | 原小布图片、文档、录音导入与保存确认 |
 | `com.coloros.smartsidebar` | `onPackageReady` | 原生设置页扩展、卡包独立浮标设置模式 |
 | `com.android.systemui` | Application 创建完成后启动 | 原 vivo 卡包与内置插件运行、窗口与手势兼容 |

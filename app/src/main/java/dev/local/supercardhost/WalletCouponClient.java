@@ -14,6 +14,8 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.os.Build;
+import android.util.Log;
 
 import org.json.JSONObject;
 
@@ -26,11 +28,13 @@ public final class WalletCouponClient {
     public static final String PACKAGE = "com.finshell.wallet";
     public static final String ACTION = "dev.local.supercardhost.WALLET_COUPONS";
     private static final String BOOTSTRAP = "com.finshell.wallet.card.event.provider";
-    private static final Handler RESPONSES;
-    static {
-        HandlerThread thread = new HandlerThread("SuperCardWalletResults");
-        thread.start();
-        RESPONSES = new Handler(thread.getLooper());
+    private static final class Responses {
+        static final Handler HANDLER = create();
+        private static Handler create() {
+            HandlerThread thread = new HandlerThread("SuperCardWalletResults");
+            thread.start();
+            return new Handler(thread.getLooper());
+        }
     }
 
     private WalletCouponClient() { }
@@ -65,68 +69,129 @@ public final class WalletCouponClient {
 
     /** Includes the wallet's account hash, needed before cached data can be displayed. */
     public static Bundle querySnapshot(Context host) throws Exception {
+        return querySnapshot(host, new Connection(host));
+    }
+
+    // Package-private seam: tests exercise the real connection/retry decisions,
+    // without starting a vendor app or using its account/network services.
+    static Bundle querySnapshot(Context host, Connection connection) throws Exception {
         if (Looper.myLooper() == Looper.getMainLooper())
             throw new IllegalStateException("钱包查询必须在后台执行");
+        if (Build.VERSION.SDK_INT < 34)
+            throw new QueryFailure("unsupported_android", "当前系统不支持钱包连接所需的发送方身份校验");
         requireUnlocked(host);
-        ProviderInfo info = host.getPackageManager().resolveContentProvider(BOOTSTRAP, 0);
-        if (info == null || !PACKAGE.equals(info.packageName) || !info.enabled || !info.exported)
-            throw new IllegalStateException("钱包后台入口不可用");
-        // The public Seedling provider's onCreate only returns true. Acquire it to
-        // start the actual wallet process, without querying cards or sending events.
-        // Hold the client through the handshake; providers can publish before the
-        // Application lifecycle hook registers our dynamic receiver.
-        try (ContentProviderClient provider = host.getContentResolver()
-                .acquireContentProviderClient(BOOTSTRAP)) {
-            if (provider == null) throw new IllegalStateException("钱包后台暂时无法启动");
-            // Native inventory plus per-order QR reads can use 15.5s; the receiver
-            // finishes by 18s. Each coordinator attempt includes this warm-up.
-            // Allow process bootstrap/broadcast dispatch margin without overlapping
-            // another request while the wallet's goAsync operation is still alive.
-            long deadline = SystemClock.elapsedRealtime() + 22_000;
-            while (true) {
-                requireUnlocked(host);
-                Bundle result = request(host, Math.max(1, deadline - SystemClock.elapsedRealtime()));
-                if (result != null && !result.isEmpty()) {
-                    if (!"ok".equals(result.getString("status")))
-                        throw new QueryFailure(result.getString("reason", "native_unavailable"),
-                                result.getString("error", "钱包券码暂不可用"));
-                    String data = result.getString("data");
-                    if (data == null || data.length() > 800_000)
-                        throw new IllegalStateException("钱包券码响应无效");
-                    JSONObject parsed = new JSONObject(data);
-                    for (String key : new String[]{"films", "performances", "coupons"})
-                        if (parsed.optJSONArray(key) == null)
-                            throw new IllegalStateException("钱包券码响应格式无效");
-                    return result;
-                }
-                if (SystemClock.elapsedRealtime() >= deadline)
-                    throw new IllegalStateException("钱包券码接入尚未就绪");
-                Thread.sleep(150);
+        try (connection) {
+            // A running, hooked wallet does not need Seedling. In some wallet
+            // versions that optional provider is disabled/absent or inaccessible.
+            Bundle hello = connection.ping();
+            if (!connected(hello)) {
+                connection.warmUp();
+                long deadline = connection.now() + 8_000;
+                do {
+                    requireUnlocked(host);
+                    hello = connection.ping();
+                    if (connected(hello)) break;
+                    connection.pause();
+                } while (connection.now() < deadline);
+                if (!connected(hello)) throw new QueryFailure(connection.bootstrapFailure == null
+                        ? "bridge_unavailable" : connection.bootstrapFailure,
+                        "钱包接入未响应，请确认模块已勾选钱包并重启钱包或手机");
             }
+            requireUnlocked(host);
+            // Only the handshake is retried here. A native query can run for
+            // 18 seconds; never send a second one while waiting for its result.
+            Bundle result = connection.exchange("query", 22_000);
+            if (result == null || result.isEmpty())
+                throw new QueryFailure("bridge_unavailable", "钱包连接已中断，请重新展开卡包");
+            if (!"ok".equals(result.getString("status")))
+                throw new QueryFailure(result.getString("reason", "native_unavailable"),
+                        "钱包票券读取未完成");
+            String data = result.getString("data");
+            if (data == null || data.length() > 800_000)
+                throw new QueryFailure("invalid_response", "钱包券码响应无效");
+            JSONObject parsed;
+            try { parsed = new JSONObject(data); }
+            catch (org.json.JSONException invalid) {
+                throw new QueryFailure("invalid_response", "钱包券码响应格式无效");
+            }
+            for (String key : new String[]{"films", "performances", "coupons"})
+                if (parsed.optJSONArray(key) == null)
+                    throw new QueryFailure("invalid_response", "钱包券码响应格式无效");
+            // Do not return account-bound data after the screen locks.
+            requireUnlocked(host);
+            return result;
         }
     }
 
-    private static void requireUnlocked(Context host) {
-        KeyguardManager manager = host.getSystemService(KeyguardManager.class);
-        if (manager == null || manager.isDeviceLocked() || manager.isKeyguardLocked())
-            throw new IllegalStateException("解锁后才能读取钱包券码");
+    private static boolean connected(Bundle hello) {
+        return hello != null && ("connected".equals(hello.getString("status"))
+                // An old wallet process can still be running after APK upgrade.
+                || "unsupported_operation".equals(hello.getString("reason")));
     }
 
-    private static Bundle request(Context host, long timeout) throws Exception {
+    static class Connection implements AutoCloseable {
+        final Context host;
+        ContentProviderClient provider;
+        String bootstrapFailure;
+        Connection(Context host) { this.host = host; }
+        long now() { return SystemClock.elapsedRealtime(); }
+        void pause() throws InterruptedException { Thread.sleep(150); }
+        Bundle ping() throws Exception {
+            try { return exchange("ping", 2_000); }
+            catch (QueryFailure failure) {
+                if (!"transport_timeout".equals(failure.reason)) throw failure;
+                return null;
+            }
+        }
+        void warmUp() {
+            // Acquire only the known no-op public provider; never call wallet
+            // business methods or launch a visible Activity to wake the process.
+            try {
+                ProviderInfo info = host.getPackageManager().resolveContentProvider(BOOTSTRAP, 0);
+                if (info == null || !PACKAGE.equals(info.packageName) || !info.enabled || !info.exported
+                        || info.applicationInfo == null || !info.applicationInfo.enabled) {
+                    bootstrapFailure = "bootstrap_unavailable";
+                    return;
+                }
+                provider = host.getContentResolver().acquireContentProviderClient(BOOTSTRAP);
+                if (provider == null) bootstrapFailure = "bootstrap_unavailable";
+            } catch (SecurityException denied) {
+                bootstrapFailure = "bootstrap_denied";
+            } catch (RuntimeException unavailable) {
+                bootstrapFailure = "bootstrap_unavailable";
+            }
+            if (bootstrapFailure != null)
+                Log.w("SuperCardWalletClient", "Wallet warm-up failed reason=" + bootstrapFailure);
+        }
+        Bundle exchange(String operation, long timeout) throws Exception {
+            return request(host, operation, timeout);
+        }
+        @Override public void close() {
+            if (provider != null) { provider.close(); provider = null; }
+        }
+    }
+
+    private static void requireUnlocked(Context host) throws QueryFailure {
+        KeyguardManager manager = host.getSystemService(KeyguardManager.class);
+        if (manager == null || manager.isDeviceLocked() || manager.isKeyguardLocked())
+            throw new QueryFailure("locked", "解锁后才能读取钱包券码");
+    }
+
+    private static Bundle request(Context host, String operation, long timeout) throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
         AtomicReference<Bundle> reply = new AtomicReference<>();
         BroadcastOptions options = BroadcastOptions.makeBasic();
         options.setShareIdentityEnabled(true);
-        Intent intent = new Intent(ACTION).setPackage(PACKAGE).putExtra("op", "query");
+        Intent intent = new Intent(ACTION).setPackage(PACKAGE).putExtra("op", operation);
         host.sendOrderedBroadcast(intent, null, options.toBundle(), new BroadcastReceiver() {
             @Override public void onReceive(Context context, Intent original) {
                 Bundle data = getResultExtras(false);
                 reply.set(data == null ? null : new Bundle(data));
                 latch.countDown();
             }
-        }, RESPONSES, 0, null, null);
+        }, Responses.HANDLER, 0, null, null);
         if (!latch.await(timeout, TimeUnit.MILLISECONDS))
-            throw new IllegalStateException("等待钱包券码超时");
+            throw new QueryFailure("transport_timeout", "等待钱包响应超时");
         return reply.get();
     }
 }

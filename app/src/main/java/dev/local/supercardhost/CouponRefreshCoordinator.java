@@ -43,6 +43,7 @@ public final class CouponRefreshCoordinator {
     private static JSONObject snapshot;
     private static String accountKey;
     private static String state = "idle";
+    private static String failureReason = "";
     private static boolean workerRunning;
     private static Request pending;
     private record Request(Application application, String reason, long generation) { }
@@ -177,11 +178,17 @@ public final class CouponRefreshCoordinator {
         synchronized (LOCK) { return state; }
     }
 
+    public static String failureReason(Application application) {
+        if (locked(application)) return "locked";
+        synchronized (LOCK) { return failureReason; }
+    }
+
     public static void reportAdapterFailure(String expectedAccount) {
         synchronized (LOCK) {
             if (expectedAccount == null || !expectedAccount.equals(accountKey)) return;
             snapshot = null; accountKey = null;
             state = "unavailable";
+            failureReason = "invalid_response";
         }
         CouponImageLoader.invalidateAll();
         notifyListeners();
@@ -235,6 +242,7 @@ public final class CouponRefreshCoordinator {
                 synchronized (LOCK) {
                     if (!visible || generation != token) return;
                     snapshot = data; accountKey = account;
+                    failureReason = incomplete ? "native_code_incomplete" : "";
                     state = incomplete ? (attempt < 3 ? "updating_codes" : "codes_unavailable")
                             : response.getBoolean("partial", false) ? "partial" : "ready";
                 }
@@ -244,6 +252,11 @@ public final class CouponRefreshCoordinator {
                 if (!incomplete || attempt == 3) return;
             } catch (Throwable error) {
                 if (!current(application, token)) return;
+                String reason = WalletConnectionStatus.reason(error);
+                synchronized (LOCK) {
+                    if (!visible || generation != token) return;
+                    failureReason = reason;
+                }
                 if (error instanceof WalletCouponClient.QueryFailure failure && failure.invalidatesAccount()) {
                     synchronized (LOCK) {
                         if (!visible || generation != token) return;
@@ -254,7 +267,7 @@ public final class CouponRefreshCoordinator {
                     notifyListeners();
                 }
                 Log.w(TAG, "Read-only wallet refresh attempt=" + attempt + " failed="
-                        + error.getClass().getSimpleName());
+                        + error.getClass().getSimpleName() + " reason=" + reason);
             }
             if (attempt < 3) {
                 try { Thread.sleep(attempt * 400L); }
@@ -276,6 +289,7 @@ public final class CouponRefreshCoordinator {
             token = ++generation;
             snapshot = null; accountKey = null;
             state = "loading";
+            failureReason = "";
             pending = null;
         }
         CouponImageLoader.invalidateAll();

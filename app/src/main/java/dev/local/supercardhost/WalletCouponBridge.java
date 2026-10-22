@@ -131,6 +131,15 @@ public final class WalletCouponBridge {
                         return;
                     }
                     String op = intent.getStringExtra("op");
+                    if ("ping".equals(op)) {
+                        // A transport handshake must not resolve obfuscated APIs,
+                        // read an account, or wait for an in-flight native query.
+                        Bundle result = new Bundle();
+                        result.putString("status", "connected");
+                        setResultCode(Activity.RESULT_OK);
+                        setResultExtras(result);
+                        return;
+                    }
                     if (op != null && !"query".equals(op) && !"check".equals(op)) {
                         setResultCode(Activity.RESULT_CANCELED);
                         setResultExtras(unavailable("unsupported_operation", "仅支持读取真实票券"));
