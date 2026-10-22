@@ -38,12 +38,6 @@ public final class RootDisplayDaemon extends Binder {
     private static final String TAG = "SuperCardRootDisplay";
     private static final String SYSTEM_UI = "com.android.systemui";
     private static final String MODULE_PACKAGE = "dev.local.supercardhost";
-    private static final String ACTION = "dev.local.supercardhost.ROOT_DISPLAY_SERVICE";
-    private static final String DESCRIPTOR = "dev.local.supercardhost.RootDisplay.v1";
-    private static final int HELLO = IBinder.FIRST_CALL_TRANSACTION;
-    private static final int CREATE = IBinder.FIRST_CALL_TRANSACTION + 1;
-    private static final int RELEASE = IBinder.FIRST_CALL_TRANSACTION + 2;
-    private static final int ORIGINAL_DISPLAY_FLAGS = 19917;
     private static final long ANNOUNCE_INTERVAL_MS = 2000;
     private static LocalServerSocket singleton;
 
@@ -89,7 +83,7 @@ public final class RootDisplayDaemon extends Binder {
         this.announcementOptions = (Bundle) optionsClass.getMethod("toBundle").invoke(options);
         this.sendBroadcastWithOptions = Context.class.getMethod("sendBroadcast",
                 Intent.class, String.class, Bundle.class);
-        attachInterface(null, DESCRIPTOR);
+        attachInterface(null, RootDisplayProtocol.DESCRIPTOR);
     }
 
     /** Launch using CLASSPATH=host.apk app_process / ...RootDisplayDaemon [nonce]. */
@@ -155,13 +149,13 @@ public final class RootDisplayDaemon extends Binder {
             extras.putBinder("service", this);
             extras.putString("nonce", nonce);
             if (!connected) {
-                Intent announcement = new Intent(ACTION).setPackage(SYSTEM_UI).putExtras(extras);
+                Intent announcement = new Intent(RootDisplayProtocol.ACTION).setPackage(SYSTEM_UI).putExtras(extras);
                 sendBroadcastWithOptions.invoke(context, announcement,
                         "android.permission.DUMP", announcementOptions);
             }
             // The app observes liveness only; the Binder still authorizes SystemUI
             // exclusively. Its receiver verifies the shared root sender identity.
-            sendBroadcastWithOptions.invoke(context, new Intent(ACTION).setPackage(MODULE_PACKAGE).putExtras(extras),
+            sendBroadcastWithOptions.invoke(context, new Intent(RootDisplayProtocol.ACTION).setPackage(MODULE_PACKAGE).putExtras(extras),
                     null, announcementOptions);
         } catch (Throwable failure) {
             Log.e(TAG, "Could not announce secure display endpoint", unwrap(failure));
@@ -177,26 +171,26 @@ public final class RootDisplayDaemon extends Binder {
     protected boolean onTransact(int code, Parcel data, Parcel reply, int flags)
             throws RemoteException {
         if (code == INTERFACE_TRANSACTION) {
-            if (reply != null) reply.writeString(DESCRIPTOR);
+            if (reply != null) reply.writeString(RootDisplayProtocol.DESCRIPTOR);
             return true;
         }
-        if (code != HELLO && code != CREATE && code != RELEASE) {
+        if (code != RootDisplayProtocol.HELLO && code != RootDisplayProtocol.CREATE && code != RootDisplayProtocol.RELEASE) {
             return super.onTransact(code, data, reply, flags);
         }
         // These operations are synchronous so that failure cannot be mistaken for
         // successful display creation. A one-way call never mutates state.
         if (reply == null || (flags & IBinder.FLAG_ONEWAY) != 0) return false;
         try {
-            data.enforceInterface(DESCRIPTOR);
+            data.enforceInterface(RootDisplayProtocol.DESCRIPTOR);
             if (Binder.getCallingUid() != systemUiUid) {
                 throw new SecurityException("Caller is not SystemUI");
             }
             if (!nonce.equals(data.readString())) {
                 throw new SecurityException("Session nonce does not match");
             }
-            if (code == HELLO) {
+            if (code == RootDisplayProtocol.HELLO) {
                 handleHello(data, reply);
-            } else if (code == CREATE) {
+            } else if (code == RootDisplayProtocol.CREATE) {
                 handleCreate(data, reply);
             } else {
                 handleRelease(data, reply);
@@ -268,7 +262,7 @@ public final class RootDisplayDaemon extends Binder {
             if (surface == null || !surface.isValid()) {
                 throw new IllegalArgumentException("A valid client Surface is required");
             }
-            if ((flags & ~ORIGINAL_DISPLAY_FLAGS) != 0
+            if ((flags & ~RootDisplayProtocol.DISPLAY_FLAGS) != 0
                     || (flags & DisplayManager.VIRTUAL_DISPLAY_FLAG_SECURE) == 0) {
                 throw new IllegalArgumentException("Only original secure display flags are permitted");
             }

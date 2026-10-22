@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit;
 public final class AutoVirtualDisplayManager {
     static final String PACKAGE = "dev.local.supercardhost";
     static final String START = PACKAGE + ".START_ROOT_DISPLAY";
-    static final String ANNOUNCE = PACKAGE + ".ROOT_DISPLAY_SERVICE";
+    static final String ANNOUNCE = RootDisplayProtocol.ACTION;
     static final String PAYMENT_DEMAND = "paymentDemand";
     private static final String TAG = "SuperCardAutoDisplay";
     private static final long QUICK_RETRY_MS = 3_000;

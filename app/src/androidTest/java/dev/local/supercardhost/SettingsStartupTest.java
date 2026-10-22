@@ -47,7 +47,7 @@ public final class SettingsStartupTest extends Instrumentation {
             checkPage("DhuPaySettingsActivity", "url", null);
             checkFloatingWindow();
             checkFloatingSessions();
-            result.putString("stream", "Settings startup: 4 entry points passed\nFloating cards: window embedding passed\nFloating lifecycle: detach/reattach passed\nLens display: embedded activity and touch passed\n");
+            result.putString("stream", "Settings startup: 4 entry points passed\nFloating cards: window embedding passed\nFloating lifecycle: detach/reattach passed\nLens display: embedded activity and touch passed\nRoot display: callback wrapper passed\n");
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
             result.putString("stream", android.util.Log.getStackTraceString(error));
@@ -198,6 +198,7 @@ public final class SettingsStartupTest extends Instrumentation {
             });
             int id = display.get().getDisplay().getDisplayId();
             if (id <= 0) throw new AssertionError("Lens selected the main display");
+            checkRootDisplayWrapper(target, output.get(), display.get());
             Class<?> backendType = target.getClassLoader().loadClass(target.getPackageName() + ".LensDisplayBackend");
             Object backend = backendType.getConstructor(Context.class).newInstance(target);
             Intent intent = new Intent().setClassName(target.getPackageName(), target.getPackageName() + ".HostActivity")
@@ -254,6 +255,27 @@ public final class SettingsStartupTest extends Instrumentation {
                 });
             } finally { removeMonitor(monitor); getUiAutomation().dropShellPermissionIdentity(); }
         }
+    }
+
+    /** Exercise the production hidden-framework adapter with a real display callback. */
+    private void checkRootDisplayWrapper(Context target, Surface surface, VirtualDisplay original) throws Exception {
+        ClassLoader loader = target.getClassLoader();
+        Class<?> daemon = loader.loadClass("dev.local.supercardhost.RootDisplayDaemon");
+        Method callback = daemon.getDeclaredMethod("callbackBinder", VirtualDisplay.class); callback.setAccessible(true);
+        android.os.IBinder binder = (android.os.IBinder) callback.invoke(null, original);
+        Class<?> tokenType = loader.loadClass("dev.local.supercardhost.RootDisplayTransactions$DisplayToken");
+        java.lang.reflect.Constructor<?> constructor = tokenType.getDeclaredConstructor(int.class, android.os.IBinder.class);
+        constructor.setAccessible(true);
+        int id = original.getDisplay().getDisplayId();
+        Object token = constructor.newInstance(id, binder);
+        Class<?> wrapper = loader.loadClass("dev.local.supercardhost.RootDisplayWrapper");
+        Method wrap = wrapper.getDeclaredMethod("wrap", String.class, int.class, int.class, int.class,
+                Surface.class, int.class, tokenType); wrap.setAccessible(true);
+        VirtualDisplay result = (VirtualDisplay) wrap.invoke(null, "SuperCard_Lens_Test", 600, 900, 240,
+                surface, 19917 & ~DisplayManager.VIRTUAL_DISPLAY_FLAG_SECURE, token);
+        if (result == null || result.getDisplay().getDisplayId() != id)
+            throw new AssertionError("Root callback wrapper changed the display");
+        // Both wrappers refer to the same callback. The original owner releases it in finally.
     }
 
     private void checkPayAppearance(FrameLayout card, ClassLoader hostLoader) throws Exception {

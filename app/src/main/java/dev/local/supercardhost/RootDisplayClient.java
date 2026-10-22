@@ -9,27 +9,23 @@ import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
-import android.hardware.display.VirtualDisplayConfig;
-import android.os.Binder;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.Parcel;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.Surface;
-import java.lang.reflect.Method;
 
 /** Narrow root backend for fixed PAY/LENS displays; no payment or camera data is handled here. */
 public final class RootDisplayClient {
-    private static final String ACTION = "dev.local.supercardhost.ROOT_DISPLAY_SERVICE";
-    private static final String DESCRIPTOR = "dev.local.supercardhost.RootDisplay.v1";
     private static final String TAG = "SuperCardRootDisplay";
-    private static final IBinder LIFETIME = new Binder();
-    private static IBinder service;
-    private static String nonce;
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    private static final RootDisplayConnection CONNECTION = new RootDisplayConnection(MAIN, () -> {
+        Log.w(TAG, "Secure display backend disconnected");
+        PluginRuntime.setPaymentSecure(false);
+        requestBackend();
+    });
     private static Application host;
     private static boolean starterBound;
     private static long lastPaymentDemand = -3_000;
@@ -56,49 +52,24 @@ public final class RootDisplayClient {
                 IBinder candidate = extras == null ? null : extras.getBinder("service");
                 String session = intent.getStringExtra("nonce");
                 if (candidate == null || session == null || !session.matches("[0-9a-f]{32}")) return;
-                synchronized (RootDisplayClient.class) {
-                    if (candidate.equals(service) && session.equals(nonce)) return;
-                }
                 try {
-                    Parcel data = Parcel.obtain(), reply = Parcel.obtain();
-                    try {
-                        data.writeInterfaceToken(DESCRIPTOR); data.writeString(session);
-                        data.writeStrongBinder(LIFETIME);
-                        if (!candidate.transact(1, data, reply, 0)) throw new IllegalStateException("No handshake transaction");
-                        reply.readException();
-                    } finally { data.recycle(); reply.recycle(); }
-                    candidate.linkToDeath(() -> {
-                        boolean disconnected;
-                        synchronized (RootDisplayClient.class) {
-                            disconnected = service == candidate;
-                            if (disconnected) { service = null; nonce = null; }
-                        }
-                        if (!disconnected) return;
-                        Log.w(TAG, "Secure display backend disconnected");
-                        MAIN.post(() -> {
-                            PluginRuntime.setPaymentSecure(false);
-                            requestBackend();
-                        });
-                    }, 0);
-                    synchronized (RootDisplayClient.class) { service = candidate; nonce = session; }
+                    if (!CONNECTION.connect(candidate, session)) return;
                     Log.i(TAG, "Secure display backend connected, sender uid=0");
                     releaseStarter();
                 } catch (Throwable error) { Log.e(TAG, "Display backend handshake failed", error); }
             }
-        }, new IntentFilter(ACTION), "android.permission.DUMP", null, Context.RECEIVER_EXPORTED);
+        }, new IntentFilter(RootDisplayProtocol.ACTION), "android.permission.DUMP", null, Context.RECEIVER_EXPORTED);
         requestBackend();
         MAIN.postDelayed(new Runnable() {
             @Override public void run() {
-                synchronized (RootDisplayClient.class) {
-                    if (service == null || !service.isBinderAlive()) requestBackend();
-                }
+                if (!isReady()) requestBackend();
                 MAIN.postDelayed(this, 15_000);
             }
         }, 15_000);
     }
 
-    public static synchronized boolean isReady() {
-        return service != null && service.isBinderAlive();
+    public static boolean isReady() {
+        return CONNECTION.snapshot() != null;
     }
 
     public static void requestBackend() {
@@ -155,12 +126,13 @@ public final class RootDisplayClient {
     static synchronized VirtualDisplay createCamera(int width, int height, int density, Surface surface) {
         // Same trusted, own-content, destroy-on-removal display policy as the original card.
         // The daemon permits one display per fixed card name and only the authenticated SystemUI client.
-        return createNamed("SuperCard_Lens", width, height, density, surface, 19917, false);
+        return createNamed("SuperCard_Lens", width, height, density, surface, RootDisplayProtocol.DISPLAY_FLAGS, false);
     }
 
     private static VirtualDisplay createNamed(String name, int width, int height, int density,
             Surface surface, int flags, boolean payment) {
-        if (service == null || !service.isBinderAlive()) {
+        RootDisplayConnection.Session session = CONNECTION.snapshot();
+        if (session == null) {
             requestBackend();
             throw new IllegalStateException("Secure card display backend is not connected");
         }
@@ -168,48 +140,26 @@ public final class RootDisplayClient {
         if (payment) PluginRuntime.setPaymentSecure(true);
         int displayId = -1;
         try {
-            IBinder callback;
-            Parcel data = Parcel.obtain(), reply = Parcel.obtain();
-            try {
-                data.writeInterfaceToken(DESCRIPTOR); data.writeString(nonce);
-                data.writeString(name); data.writeInt(width); data.writeInt(height); data.writeInt(density);
-                data.writeTypedObject(surface, 0); data.writeInt(flags);
-                if (!service.transact(2, data, reply, 0)) throw new IllegalStateException("No create transaction");
-                reply.readException(); displayId = reply.readInt(); callback = reply.readStrongBinder();
-            } finally { data.recycle(); reply.recycle(); }
-            if (displayId < 0 || callback == null) throw new IllegalStateException("Root display was not created");
-            Class<?> globalType = Class.forName("android.hardware.display.DisplayManagerGlobal");
-            Class<?> callbackType = Class.forName("android.hardware.display.IVirtualDisplayCallback");
-            Class<?> stubType = Class.forName("android.hardware.display.IVirtualDisplayCallback$Stub");
-            Object token = stubType.getMethod("asInterface", IBinder.class).invoke(null, callback);
-            Method instance = globalType.getDeclaredMethod("getInstance"); instance.setAccessible(true);
-            Object global = instance.invoke(null);
-            VirtualDisplayConfig config = new VirtualDisplayConfig.Builder(name, width, height, density)
-                    .setSurface(surface).setFlags(flags).build();
-            Method wrap = globalType.getDeclaredMethod("createVirtualDisplayWrapper",
-                    VirtualDisplayConfig.class, callbackType, int.class);
-            wrap.setAccessible(true);
-            VirtualDisplay result = (VirtualDisplay) wrap.invoke(global, config, token, displayId);
-            if (result == null) throw new IllegalStateException("Cannot wrap root display " + displayId);
+            RootDisplayTransactions.DisplayToken created = RootDisplayTransactions.create(session,
+                    name, width, height, density, surface, flags);
+            displayId = created.id;
+            VirtualDisplay result = RootDisplayWrapper.wrap(name, width, height, density, surface, flags, created);
             Log.i(TAG, (payment ? "Original secure payment display ready id=" : "Lens display ready id=") + displayId + ", size=" + width + "x" + height + ", flags=" + flags);
             return result;
         } catch (Throwable error) {
-            if (displayId >= 0) releaseFailedDisplay(displayId);
+            if (displayId > 0) releaseFailedDisplay(session, displayId);
             if (payment) PluginRuntime.setPaymentSecure(false);
             throw new IllegalStateException("Cannot create secure card display", error);
         }
     }
 
     public static synchronized void released(int id) {
-        if (service != null && service.isBinderAlive()) releaseFailedDisplay(id);
+        RootDisplayConnection.Session session = CONNECTION.snapshot();
+        if (session != null) releaseFailedDisplay(session, id);
     }
 
-    private static void releaseFailedDisplay(int id) {
-        Parcel data = Parcel.obtain(), reply = Parcel.obtain();
-        try {
-            data.writeInterfaceToken(DESCRIPTOR); data.writeString(nonce); data.writeInt(id);
-            service.transact(3, data, reply, 0); reply.readException();
-        } catch (Throwable error) { Log.w(TAG, "Cleanup failed for display " + id, error); }
-        finally { data.recycle(); reply.recycle(); }
+    private static void releaseFailedDisplay(RootDisplayConnection.Session session, int id) {
+        try { RootDisplayTransactions.release(session, id); }
+        catch (Throwable error) { Log.w(TAG, "Cleanup failed for display " + id, error); }
     }
 }

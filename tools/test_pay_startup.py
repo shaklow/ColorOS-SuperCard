@@ -30,9 +30,10 @@ public class Handler {
 """,
     "android.os.IBinder": """
 public interface IBinder {interface DeathRecipient {void binderDied();}
- boolean isBinderAlive(); void linkToDeath(DeathRecipient r,int f); boolean transact(int c,Parcel d,Parcel r,int f);}
+ boolean isBinderAlive(); void linkToDeath(DeathRecipient r,int f) throws RemoteException; boolean unlinkToDeath(DeathRecipient r,int f); boolean transact(int c,Parcel d,Parcel r,int f) throws RemoteException;}
 """,
-    "android.os.Binder": "public class Binder implements IBinder {public boolean isBinderAlive(){return true;} public void linkToDeath(DeathRecipient r,int f){} public boolean transact(int c,Parcel d,Parcel r,int f){return false;}}",
+    "android.os.Binder": "public class Binder implements IBinder {public boolean isBinderAlive(){return true;} public void linkToDeath(DeathRecipient r,int f){} public boolean unlinkToDeath(DeathRecipient r,int f){return true;} public boolean transact(int c,Parcel d,Parcel r,int f){return false;}}",
+    "android.os.RemoteException": "public class RemoteException extends Exception {}",
     "android.os.Bundle": "public class Bundle {public IBinder binder; public IBinder getBinder(String k){return binder;}}",
     "android.os.Parcel": """
 public class Parcel {public static Parcel obtain(){return new Parcel();} public void recycle(){} public void readException(){}
@@ -141,7 +142,8 @@ def main():
             files.append(str(path))
         production = ROOT / "app/src/main/java/dev/local/supercardhost"
         files += [str(production / (name + ".java")) for name in (
-            "AutoVirtualDisplayManager", "RootDisplayClient", "RootDisplayStartReceiver")]
+            "AutoVirtualDisplayManager", "RootDisplayClient", "RootDisplayStartReceiver",
+            "RootDisplayConnection", "RootDisplayProtocol", "RootDisplayTransactions", "RootDisplayWrapper")]
         subprocess.run([javac, "-encoding", "UTF-8", "-d", str(directory), *files], check=True)
         for scenario in ("background", "payment"):
             subprocess.run([java, "-cp", str(directory), "dev.local.supercardhost.TestPayStartup", scenario], check=True)
