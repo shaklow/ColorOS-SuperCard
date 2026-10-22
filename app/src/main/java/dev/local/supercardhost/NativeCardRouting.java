@@ -35,16 +35,28 @@ final class NativeCardRouting {
             java.lang.reflect.Method end = callback.getDeclaredMethod("onGestureEnd", float.class, float.class, float.class);
             end.setAccessible(true);
             module.hook(end).intercept(chain -> {
-                Object result = chain.proceed();
-                if (shouldRoute(host)) {
-                    Object coordinator = DhuCardConfiguration.field(impl, "cardCoordinator");
-                    boolean shown = Boolean.TRUE.equals(coordinator.getClass().getMethod("isCardWindowShown").invoke(coordinator));
-                    if (shown && launch(host)) PluginRuntime.hide();
+                if (!shouldRoute(host)) return chain.proceed();
+                boolean committed;
+                try {
+                Object coordinator = DhuCardConfiguration.field(impl, "cardCoordinator");
+                boolean shown = Boolean.TRUE.equals(coordinator.getClass().getMethod("isCardWindowShown").invoke(coordinator));
+                Object controller = coordinator.getClass().getMethod("getGestureController").invoke(coordinator);
+                committed = Boolean.TRUE.equals(controller.getClass().getMethod("shouldTriggerShow",
+                        float.class, float.class, float.class, boolean.class).invoke(controller,
+                        chain.getArg(0), chain.getArg(1), chain.getArg(2), shown));
+                } catch (Exception | LinkageError error) {
+                    ready = false;
+                    Log.w("SuperCardNative", "Gesture decision unavailable; retaining existing route", error);
+                    return chain.proceed();
                 }
+                Object result = chain.proceed();
+                // A cancelled swipe can keep its window attached while animating out.
+                // The original threshold result, rather than attachment, decides routing.
+                if (committed && shouldRoute(host) && launch(host)) PluginRuntime.hide();
                 return result;
             });
             ready = true;
-        } catch (Exception error) { Log.w("SuperCardNative", "Native gesture route unavailable", error); }
+        } catch (Exception | LinkageError error) { Log.w("SuperCardNative", "Native gesture route unavailable", error); }
     }
 
     private static boolean launch(Application host) {
@@ -60,10 +72,12 @@ final class NativeCardRouting {
     }
 
     static boolean shouldRoute(android.content.Context context) {
-        KeyguardManager keyguard = context.getSystemService(KeyguardManager.class);
-        PowerManager power = context.getSystemService(PowerManager.class);
-        return ready && Settings.Secure.getInt(context.getContentResolver(), "supercard_native_cards", 0) == 1
-                && keyguard != null && !keyguard.isKeyguardLocked() && power != null && power.isInteractive();
+        try {
+            if (!ready || Settings.Secure.getInt(context.getContentResolver(), "supercard_native_cards", 0) != 1) return false;
+            KeyguardManager keyguard = context.getSystemService(KeyguardManager.class);
+            PowerManager power = context.getSystemService(PowerManager.class);
+            return keyguard != null && !keyguard.isKeyguardLocked() && power != null && power.isInteractive();
+        } catch (RuntimeException unavailable) { return false; }
     }
 
     static void showLegacy(Runnable action) {

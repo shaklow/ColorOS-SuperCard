@@ -35,7 +35,7 @@ class HostActivity : M3eSettingsActivity() {
             if (!alive() || expected != queryGeneration) return@request
             nativeSwitch.setOnCheckedChangeListener(null)
             nativeSwitch.isChecked = error == null && result?.getBoolean("nativeCards", false) == true
-            nativeSwitch.isEnabled = error == null
+            nativeSwitch.isEnabled = error == null && result?.getBoolean("nativeCardsReady", false) == true
             nativeSwitch.setOnCheckedChangeListener { _, checked ->
                 nativeSwitch.isEnabled = false
                 CardConfiguration.request(this, "nativeCards", Bundle().apply { putBoolean("value", checked) }) { saved, failure ->

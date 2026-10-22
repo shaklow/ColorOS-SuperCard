@@ -210,6 +210,7 @@ public final class CardConfiguration {
 
     public static Bundle read(Context context) {
         Bundle state = new Bundle();
+        state.putBoolean("nativeCardsReady", NativeCardRouting.isReady());
         state.putBoolean("nativeCards", Settings.Secure.getInt(context.getContentResolver(), "supercard_native_cards", 0) == 1);
         state.putBoolean("enabled", Settings.Secure.getInt(context.getContentResolver(), "card_service_total_switch", 1) == 1);
         String side = Settings.Secure.getString(context.getContentResolver(), "navigation_gesture_right_side");

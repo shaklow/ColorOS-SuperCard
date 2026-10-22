@@ -167,17 +167,24 @@ public final class PluginRuntime {
 
     static void showLegacy() {
         if (plugin == null) throw new IllegalStateException("卡包服务尚未连接");
-        NativeCardRouting.showLegacy(PluginRuntime::show);
+        NativeCardRouting.showLegacy(() -> {
+            try { requestOriginalShow(); }
+            catch (Exception error) { throw new IllegalStateException("原卡包打开失败，请重试", error); }
+        });
     }
 
     public static void show() {
         try {
-            Object impl = field(plugin, "cardServiceImpl");
-            impl.getClass().getMethod("onCardTriggerIntent", String.class, String.class, int.class, String.class)
-                .invoke(impl, "intent_trigger", "paycard", 0, null);
+            requestOriginalShow();
             Log.i(TAG, "Original show requested");
             dumpState();
         } catch (Throwable error) { failure("show", error); }
+    }
+
+    private static void requestOriginalShow() throws Exception {
+        Object impl = field(plugin, "cardServiceImpl");
+        impl.getClass().getMethod("onCardTriggerIntent", String.class, String.class, int.class, String.class)
+            .invoke(impl, "intent_trigger", "paycard", 0, null);
     }
 
     public static void hide() {

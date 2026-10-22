@@ -25,8 +25,6 @@ public final class SettingsStartupTest extends Instrumentation {
             result.putString("stream", "Settings startup: " + checked + " entry points passed\n");
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
-            checkPage("LensSettingsActivity", "toggle_take_photo", null); checked++;
-            checkNativeNavigation();
             result.putString("stream", android.util.Log.getStackTraceString(error));
             finish(Activity.RESULT_CANCELED, result);
         }
