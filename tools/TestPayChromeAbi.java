@@ -33,6 +33,8 @@ public final class TestPayChromeAbi {
                 requireField(classes.get(CARD), field, "Landroid/widget/ImageView;"); checks++;
             }
             requireField(classes.get(CARD), "bigFingerTip", "Landroid/widget/TextView;"); checks++;
+            requireField(classes.get(CARD), "shadowBgView", "Landroid/view/View;"); checks++;
+            requireField(classes.get(CARD), "linearShadow", "Landroid/widget/LinearLayout;"); checks++;
             for (String getter : List.of("getImgBg", "getImgFunc")) {
                 requireMethod(classes.get(HOLDER), getter, "()Landroid/widget/ImageView;"); checks++;
             }

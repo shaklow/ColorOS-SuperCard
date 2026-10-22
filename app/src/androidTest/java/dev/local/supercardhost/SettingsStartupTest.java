@@ -7,6 +7,11 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.PixelFormat;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.LayerDrawable;
 import android.hardware.display.DisplayManager;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
@@ -69,6 +74,7 @@ public final class SettingsStartupTest extends Instrumentation {
                 Method create = bridge.getDeclaredMethod("lens", Context.class); create.setAccessible(true);
                 Method render = bridge.getDeclaredMethod("renderLens", View.class, Bundle.class); render.setAccessible(true);
                 View surface = (View) create.invoke(null, window);
+                checkArchiveConfiguration(surface.getContext());
                 Bundle modes = new Bundle();
                 String[] types = {"take_photo", "portrait", "video", "night_view", "master", "high_piexl"};
                 modes.putStringArray("types", types);
@@ -122,9 +128,16 @@ public final class SettingsStartupTest extends Instrumentation {
         android.widget.ImageView logo = new android.widget.ImageView(context);
         android.widget.ImageView settings = new android.widget.ImageView(context);
         android.widget.TextView hint = new android.widget.TextView(context);
+        float density = context.getResources().getDisplayMetrics().density;
+        View shadow = new View(context);
+        GradientDrawable legacy = new GradientDrawable(); legacy.setColor(0xb3ffffff); legacy.setCornerRadius(20 * density);
+        shadow.setBackground(legacy);
+        android.widget.LinearLayout actions = new android.widget.LinearLayout(context);
         FrameLayout displayOwner = new FrameLayout(context); // Ownership fixture; not a real payment display.
+        panel.addView(shadow, new FrameLayout.LayoutParams(-1, -1));
         panel.addView(frame, new FrameLayout.LayoutParams(-1, -1));
         panel.addView(logo); panel.addView(settings); panel.addView(hint);
+        panel.addView(actions, new FrameLayout.LayoutParams(-1, Math.round(145 * density), Gravity.BOTTOM));
         FrameLayout.LayoutParams displayParams = new FrameLayout.LayoutParams(160, 240);
         panel.addView(displayOwner, displayParams);
         AtomicInteger clicks = new AtomicInteger();
@@ -133,20 +146,35 @@ public final class SettingsStartupTest extends Instrumentation {
         Class<?> bridge = hostLoader.loadClass("dev.local.supercardhost.DhuMaterialUi");
         Method style = bridge.getDeclaredMethod("stylePay", Context.class, String.class, View[].class);
         style.setAccessible(true);
-        style.invoke(null, context, "card", new View[]{frame, logo, settings, hint});
+        View[] views = new View[]{frame, logo, settings, hint, shadow, actions};
+        style.invoke(null, context, "card", views);
+        style.invoke(null, context, "card", views); // Rebinding must not add decorative Views.
         panel.measure(View.MeasureSpec.makeMeasureSpec(card.getWidth(), View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(card.getHeight(), View.MeasureSpec.EXACTLY));
         panel.layout(0, 0, panel.getMeasuredWidth(), panel.getMeasuredHeight());
-        if (!frame.getBackground().getClass().getClassLoader().getClass().getName()
+        if (!((LayerDrawable) frame.getBackground()).getDrawable(0).getClass().getClassLoader().getClass().getName()
                 .equals("dalvik.system.DelegateLastClassLoader"))
             throw new AssertionError("PAY appearance escaped the private UI loader");
-        float density = context.getResources().getDisplayMetrics().density;
         if (settings.getWidth() < 48 * density || settings.getHeight() < 48 * density)
             throw new AssertionError("PAY settings touch target is too small");
         settings.performClick();
         if (clicks.get() != 1 || settings.getParent() != panel || displayOwner.getParent() != panel
-                || displayOwner.getLayoutParams() != displayParams || panel.getChildCount() != 5)
+                || displayOwner.getLayoutParams() != displayParams || panel.getChildCount() != 7)
             throw new AssertionError("PAY styling changed ownership, geometry or callbacks");
+        Bitmap idle = Bitmap.createBitmap(panel.getWidth(), panel.getHeight(), Bitmap.Config.ARGB_8888);
+        panel.draw(new Canvas(idle));
+        int x = Math.round(3 * density), y = Math.round(12 * density);
+        for (int[] corner : new int[][]{{x, y}, {idle.getWidth() - 1 - x, y},
+                {x, idle.getHeight() - 1 - y}, {idle.getWidth() - 1 - x, idle.getHeight() - 1 - y}})
+            if (Color.alpha(idle.getPixel(corner[0], corner[1])) != 0)
+                throw new AssertionError("Legacy PAY underlay is visible outside the new corners");
+        frame.setVisibility(View.INVISIBLE);
+        Bitmap payment = Bitmap.createBitmap(panel.getWidth(), panel.getHeight(), Bitmap.Config.ARGB_8888);
+        panel.draw(new Canvas(payment));
+        int cx = panel.getWidth() / 2, cy = Math.round(180 * density);
+        if (idle.getPixel(cx, cy) == payment.getPixel(cx, cy))
+            throw new AssertionError("PAY artwork is missing or did not hide with its idle frame");
+        frame.setVisibility(View.VISIBLE); idle.recycle(); payment.recycle();
         FrameLayout tile = new FrameLayout(context);
         android.widget.ImageView selection = new android.widget.ImageView(context), icon = new android.widget.ImageView(context);
         android.widget.TextView label = new android.widget.TextView(context); label.setText("微信付款码");
@@ -158,6 +186,18 @@ public final class SettingsStartupTest extends Instrumentation {
         if (selection.getLayoutParams() != tileParams || clicks.get() != 2 || tile.getChildCount() != 3
                 || !"微信付款码".contentEquals(label.getText()))
             throw new AssertionError("PAY shortcut styling replaced original controls");
+    }
+
+    private void checkArchiveConfiguration(Context original) {
+        Configuration before = new Configuration(original.getResources().getConfiguration());
+        Configuration changed = new Configuration(before); changed.fontScale = 1.6f;
+        changed.uiMode = (changed.uiMode & ~Configuration.UI_MODE_NIGHT_MASK) | Configuration.UI_MODE_NIGHT_YES;
+        Context configured = original.createConfigurationContext(changed);
+        Configuration actual = configured.getResources().getConfiguration();
+        if (actual.fontScale != 1.6f || (actual.uiMode & Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES
+                || original.getResources().getConfiguration().fontScale != before.fontScale
+                || configured.getClassLoader() != original.getClassLoader() || configured.getTheme() == original.getTheme())
+            throw new AssertionError("Shared UI archive reused a host configuration or theme");
     }
 
     private void checkCampusBounds(Context privateAppearance) throws Exception {

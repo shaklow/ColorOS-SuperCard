@@ -23,6 +23,7 @@ def verify_archive(host_apk):
                            b'Ldev/local/supercardui/SettingsSurface;',
                            b'Ldev/local/supercardui/LensCardSurface;',
                            b'Ldev/local/supercardui/PayCardAppearance;',
+                           b'Ldev/local/supercardui/PayIdleArtwork;',
                            b'Ldev/local/supercardui/CardDesign;',
                            b'Ldev/local/supercardui/CardIconButton;',
                            b'Lcom/google/android/material/button/MaterialButton;',
