@@ -14,6 +14,11 @@ import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.LayerDrawable;
 import android.hardware.display.DisplayManager;
+import android.hardware.display.VirtualDisplay;
+import android.view.TextureView;
+import android.view.Surface;
+import android.view.MotionEvent;
+import android.view.InputEvent;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
@@ -41,7 +46,7 @@ public final class SettingsStartupTest extends Instrumentation {
             checkPage("DhuPaySettingsActivity", "url", null);
             checkFloatingWindow();
             checkFloatingSessions();
-            result.putString("stream", "Settings startup: 4 entry points passed\nFloating cards: window embedding passed\nFloating lifecycle: detach/reattach passed\n");
+            result.putString("stream", "Settings startup: 4 entry points passed\nFloating cards: window embedding passed\nFloating lifecycle: detach/reattach passed\nLens display: embedded activity and touch passed\n");
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
             result.putString("stream", android.util.Log.getStackTraceString(error));
@@ -153,10 +158,82 @@ public final class SettingsStartupTest extends Instrumentation {
                 throw new AssertionError("Floating controls should work in the same window without opening a dashboard");
             main(() -> checkPayAppearance(owner.get(), target.getClassLoader()));
             if (dashboard.getHits() != 0) throw new AssertionError("PAY styling must not launch a dashboard");
+            checkLensDisplay(owner.get());
         } finally {
             try {
                 main(() -> { if (owner.get() != null && owner.get().isAttachedToWindow()) manager.get().removeViewImmediate(owner.get()); });
             } finally { removeMonitor(dashboard); shell("appops set " + pkg + " SYSTEM_ALERT_WINDOW " + previous); }
+        }
+    }
+
+    /** Real secondary display + production activity/input adapter, without depending on an OEM camera APK. */
+    private void checkLensDisplay(FrameLayout card) throws Exception {
+        Context target = getTargetContext();
+        AtomicReference<TextureView> texture = new AtomicReference<>();
+        AtomicReference<Surface> output = new AtomicReference<>();
+        AtomicReference<VirtualDisplay> display = new AtomicReference<>();
+        AtomicInteger clicks = new AtomicInteger();
+        Activity activity = null;
+        ActivityMonitor monitor = addMonitor(target.getPackageName() + ".HostActivity", null, false);
+        getUiAutomation().adoptShellPermissionIdentity();
+        try {
+            target.getClassLoader().loadClass("org.lsposed.hiddenapibypass.HiddenApiBypass")
+                    .getMethod("addHiddenApiExemptions", String[].class).invoke(null, (Object) new String[]{"Landroid/"});
+            main(() -> {
+                TextureView view = new TextureView(card.getContext()); texture.set(view);
+                card.addView(view, new FrameLayout.LayoutParams(-1, -1));
+            });
+            waitForIdleSync(); SystemClock.sleep(500); waitForIdleSync();
+            main(() -> {
+                TextureView view = texture.get();
+                if (!view.isAvailable()) throw new AssertionError("Lens texture unavailable");
+                view.getSurfaceTexture().setDefaultBufferSize(600, 900);
+                Surface surface = new Surface(view.getSurfaceTexture()); output.set(surface);
+                // Public, own-content, trusted, destroy-on-removal. Secure root display
+                // creation is a separate ROM boundary and is not emulated by this test.
+                display.set(target.getSystemService(DisplayManager.class).createVirtualDisplay(
+                        "SuperCard_Lens_Test", 600, 900, 240, surface, 1 | 8 | 1024 | 256));
+            });
+            int id = display.get().getDisplay().getDisplayId();
+            if (id <= 0) throw new AssertionError("Lens selected the main display");
+            Class<?> backendType = target.getClassLoader().loadClass(target.getPackageName() + ".LensDisplayBackend");
+            Object backend = backendType.getConstructor(Context.class).newInstance(target);
+            Intent intent = new Intent().setClassName(target.getPackageName(), target.getPackageName() + ".HostActivity")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
+            backendType.getMethod("launch", Intent.class, int.class).invoke(backend, intent, id);
+            activity = monitor.waitForActivityWithTimeout(10_000);
+            if (activity == null || activity.getDisplay().getDisplayId() != id)
+                throw new AssertionError("Lens activity escaped to the main display");
+            Activity current = activity;
+            int[] location = new int[2];
+            main(() -> {
+                View button = current.getWindow().getDecorView().findViewWithTag("show_cards");
+                if (button == null || button.getWidth() <= 0) throw new AssertionError("Lens test control missing");
+                button.setOnClickListener(v -> clicks.incrementAndGet());
+                button.getLocationOnScreen(location);
+                location[0] += button.getWidth() / 2; location[1] += button.getHeight() / 2;
+            });
+            long down = SystemClock.uptimeMillis();
+            Method inject = backendType.getMethod("inject", MotionEvent.class, int.class);
+            for (int action : new int[]{MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP}) {
+                MotionEvent event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, location[0], location[1], 0);
+                event.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+                try { if (!Boolean.TRUE.equals(inject.invoke(backend, event, id))) throw new AssertionError("Lens input rejected"); }
+                finally { event.recycle(); }
+            }
+            SystemClock.sleep(500); waitForIdleSync();
+            if (clicks.get() != 1) throw new AssertionError("Lens touch did not reach the embedded activity: " + clicks.get());
+        } finally {
+            try {
+                if (activity != null) { Activity current = activity; main(current::finish); }
+                main(() -> {
+                    try { if (display.get() != null) display.get().release(); }
+                    finally {
+                        if (output.get() != null) output.get().release();
+                        if (texture.get() != null) card.removeView(texture.get());
+                    }
+                });
+            } finally { removeMonitor(monitor); getUiAutomation().dropShellPermissionIdentity(); }
         }
     }
 

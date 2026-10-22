@@ -2,7 +2,10 @@ package dev.local.supercardhost
 
 import android.content.Context
 import android.content.res.Configuration
+import android.app.KeyguardManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.View
@@ -10,7 +13,7 @@ import android.widget.FrameLayout
 import android.widget.Toast
 import java.util.function.BiConsumer
 
-/** Native content inside the original CameraCardView. All clicks use its existing event handler. */
+/** Native content inside the original CameraCardView, with an owned interactive camera session. */
 class LensCardView(context: Context, private val owner: View) : FrameLayout(context) {
     private val lifecycle = FloatingCardScope(BiConsumer { stage, error ->
         Log.w("SuperCardLensUi", "Camera observation failed: $stage", error)
@@ -24,6 +27,8 @@ class LensCardView(context: Context, private val owner: View) : FrameLayout(cont
     private val decode = gsonType.getMethod("fromJson", String::class.java, Class::class.java)
     private var surface: View = DhuMaterialUi.lens(context)
     private var appearance = context
+    private var camera: LensCameraView? = null
+    private val resume = Handler(Looper.getMainLooper())
     private val refresh = Runnable { replaceSurface(appearance) }
 
     init { bind(surface); addView(surface, LayoutParams(-1, -1)) }
@@ -35,7 +40,7 @@ class LensCardView(context: Context, private val owner: View) : FrameLayout(cont
     }
 
     override fun onDetachedFromWindow() {
-        try { lifecycle.detach() }
+        try { closeCamera(); lifecycle.detach() }
         finally { super.onDetachedFromWindow() }
     }
 
@@ -55,8 +60,49 @@ class LensCardView(context: Context, private val owner: View) : FrameLayout(cont
             val previous = surface
             surface = next; appearance = context
             removeView(previous)
+            if (camera != null) { next.visibility = View.GONE; camera?.bringToFront() }
         } catch (error: Exception) { cleanup(next); Log.w("SuperCardLensUi", "Cannot update camera appearance", error) }
         catch (error: LinkageError) { cleanup(next); Log.w("SuperCardLensUi", "Cannot update camera appearance", error) }
+    }
+
+    fun openCamera(type: String) {
+        if (!isAttachedToWindow || !owner.isShown) return
+        closeCamera()
+        val next = LensCameraView(context, type, Runnable { closeCamera() })
+        camera = next
+        surface.visibility = View.GONE
+        addView(next, LayoutParams(-1, -1))
+    }
+
+    fun closeCamera() {
+        resume.removeCallbacksAndMessages(null)
+        val previous = camera; camera = null
+        try { previous?.close() }
+        finally {
+            if (previous != null) removeView(previous)
+            surface.visibility = View.VISIBLE
+        }
+    }
+
+    fun resumeCameraAfterUnlock(type: String) {
+        val keyguard = context.getSystemService(KeyguardManager::class.java)
+        if (keyguard == null || keyguard.isKeyguardLocked || keyguard.isDeviceLocked) return
+        resume.removeCallbacksAndMessages(null)
+        PluginRuntime.showCamera()
+        val reference = java.lang.ref.WeakReference(this)
+        resume.post(object : Runnable {
+            var attempts = 0
+            override fun run() {
+                val view = reference.get() ?: return
+                if (keyguard.isKeyguardLocked || keyguard.isDeviceLocked) return
+                view.invoke {
+                    if (view.isAttachedToWindow && view.owner.isShown &&
+                        view.owner.javaClass.getMethod("isCardExpanded").invoke(view.owner) == true) {
+                        view.openCamera(type)
+                    } else if (++attempts < 20) view.resume.postDelayed(this, 100)
+                }
+            }
+        })
     }
 
     private fun cleanup(next: View?) {

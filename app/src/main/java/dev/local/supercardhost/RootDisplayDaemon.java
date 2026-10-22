@@ -28,7 +28,7 @@ import org.lsposed.hiddenapibypass.HiddenApiBypass;
 /**
  * Root app_process endpoint for the original SuperCard secure virtual display.
  *
- * Only SystemUI may connect. The endpoint creates one specifically named display;
+ * Only SystemUI may connect. The endpoint creates one of two specifically named card displays;
  * it does not expose arbitrary system service calls or alter application security
  * flags. The client owns the display callback token after creation, while this
  * process retains the real VirtualDisplay and releases it on client death, then
@@ -251,7 +251,7 @@ public final class RootDisplayDaemon extends Binder {
         try {
             int flags = data.readInt();
             data.enforceNoDataAvail();
-            if (!DISPLAY_NAME.equals(name)) throw new IllegalArgumentException("Unexpected display name");
+            if (!DISPLAY_NAME.equals(name) && !"SuperCard_Lens".equals(name)) throw new IllegalArgumentException("Unexpected display name");
             // Match vivo's VirtualDisplayWrapper: pass the card's own geometry and
             // density to DisplayManager. Virtual displays need not fit the physical
             // screen or use its DPI (including after a resolution/fold-state change).

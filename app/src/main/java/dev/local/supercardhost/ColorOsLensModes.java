@@ -40,21 +40,19 @@ public final class ColorOsLensModes {
 
     /** Launches a known mode without requiring the camera provider to be ready. */
     public static void launch(Context context, String type) {
-        if (type == null || type.isEmpty()) {
-            throw new IllegalArgumentException("Lens function type is required");
-        }
-        Mode selected = null;
-        for (Mode mode : query(context)) {
-            if (mode.type().equals(type)) {
-                selected = mode;
-                break;
-            }
-        }
-        if (selected == null) {
-            throw new IllegalArgumentException("Native camera function unavailable: " + type);
-        }
+        context.startActivity(intent(context, type, SHORTCUT_FLAGS));
+    }
 
-        // Same action, component, flags and facing extras as CameraEntry.n(Context,...).
+    /** A fresh task confined to its display; never clears a camera task on the main display. */
+    static Intent embeddedIntent(Context context, String type) {
+        return intent(context, type, Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_MULTIPLE_TASK | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
+    }
+
+    private static Intent intent(Context context, String type, int flags) {
+        Mode selected = query(context).stream().filter(mode -> mode.type().equals(type)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Native camera function unavailable: " + type));
+        // Same action, component and facing extras as CameraEntry.n(Context,...).
         // ColorOS advertises highPixel (24) on non-Hasselblad cameras too. The
         // shortcut action rejects it unless the Hasselblad-specific feature is
         // enabled; the normal camera entry accepts the same advertised mode.
@@ -63,7 +61,7 @@ public final class ColorOsLensModes {
         Intent intent = new Intent(action)
                 .setComponent(new ComponentName(CAMERA_PACKAGE, CAMERA_PACKAGE + ".Camera"))
                 .setPackage(CAMERA_PACKAGE)
-                .addFlags(SHORTCUT_FLAGS)
+                .addFlags(flags)
                 .putExtra("mode", selected.cameraMode())
                 .putExtra("rear", !selected.front())
                 .putExtra("front", selected.front());
@@ -71,7 +69,7 @@ public final class ColorOsLensModes {
         if (selected.zoom() > 0f) {
             intent.putExtra("zoom", selected.zoom());
         }
-        context.startActivity(intent);
+        return intent;
     }
 
 }

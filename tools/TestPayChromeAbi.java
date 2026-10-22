@@ -20,7 +20,7 @@ public final class TestPayChromeAbi {
             for (var entry : Collections.list(zip.entries())) {
                 if (!entry.getName().matches("classes[0-9]*\\.dex")) continue;
                 var dex = DexBackedDexFile.fromInputStream(Opcodes.forApi(36), new BufferedInputStream(zip.getInputStream(entry)));
-                for (ClassDef type : dex.getClasses()) if (Set.of(CARD, ADAPTER, HOLDER).contains(type.getType())) {
+                for (ClassDef type : dex.getClasses()) if ((Set.of(CARD, ADAPTER, HOLDER).contains(type.getType()) || type.getType().equals("Lcom/vivo/card/cards/cardcamera/handler/CameraCardEventHandler;") || type.getType().equals("Lcom/vivo/card/cards/base/view/BaseCardView;") || type.getType().equals("Lcom/vivo/card/model/CardSetBean$CardBean$FunctionBean;"))) {
                     if (classes.put(type.getType(), type) != null) throw new AssertionError("Duplicate PAY class");
                 }
             }
@@ -40,7 +40,23 @@ public final class TestPayChromeAbi {
             }
             requireMethod(classes.get(HOLDER), "getRootView", "()Landroid/view/View;"); checks++;
             requireMethod(classes.get(HOLDER), "getTvFunc", "()Landroid/widget/TextView;"); checks++;
-            System.out.println("PAY appearance ABI: " + checks + " real bundled entries verified.");
+            ClassDef camera = classes.get("Lcom/vivo/card/cards/cardcamera/handler/CameraCardEventHandler;");
+            ClassDef base = classes.get("Lcom/vivo/card/cards/base/view/BaseCardView;");
+            String context = "Landroid/content/Context;", function = "Lcom/vivo/card/model/CardSetBean$CardBean$FunctionBean;";
+            requireField(camera, "cardCallback", "Lcom/vivo/card/cards/cardcamera/callback/ICameraCardInnerCallback;"); checks++;
+            requireMethod(camera, "isCardExpanded", "()Z"); checks++;
+            requireMethod(camera, "requestUnlock", "(" + context + ")V"); checks++;
+            requireMethod(camera, "handleFunctionClick", "(" + context + function + ")V"); checks++;
+            requireMethod(camera, "handleSettingsClick", "(" + context + ")V"); checks++;
+            requireMethod(camera, "resetPendingKeyguardRequest", "()V"); checks++;
+            requireMethod(camera, "onKeyguardSuccess", "()V"); checks++;
+            requireMethod(classes.get(function), "getType", "()Ljava/lang/String;"); checks++;
+            for (String name : List.of("onCardPackHiding", "onCardPackHidden", "onCardPackDestroyed")) {
+                requireMethod(base, name, "()V"); checks++;
+            }
+            requireMethod(base, "notifyCardForegroundState", "(Z)V"); checks++;
+            requireMethod(base, "onOuterPageScrollStateChanged", "(ILjava/lang/String;)V"); checks++;
+            System.out.println("Floating card ABI: " + checks + " real bundled entries verified.");
         }
     }
     private static void requireMethod(ClassDef type, String name, String signature) {

@@ -149,12 +149,23 @@ public final class RootDisplayClient {
     public static synchronized VirtualDisplay create(String name, int width, int height, int density,
             Surface surface, int flags) {
         if (!"SuperCard_Virtual".equals(name)) throw new IllegalArgumentException("Unsupported display name");
+        return createNamed(name, width, height, density, surface, flags, true);
+    }
+
+    static synchronized VirtualDisplay createCamera(int width, int height, int density, Surface surface) {
+        // Same trusted, own-content, destroy-on-removal display policy as the original card.
+        // The daemon still permits only one display and the authenticated SystemUI client.
+        return createNamed("SuperCard_Lens", width, height, density, surface, 19917, false);
+    }
+
+    private static VirtualDisplay createNamed(String name, int width, int height, int density,
+            Surface surface, int flags, boolean payment) {
         if (service == null || !service.isBinderAlive()) {
             requestBackend();
-            throw new IllegalStateException("Secure payment display backend is not connected");
+            throw new IllegalStateException("Secure card display backend is not connected");
         }
         flags |= DisplayManager.VIRTUAL_DISPLAY_FLAG_SECURE;
-        PluginRuntime.setPaymentSecure(true);
+        if (payment) PluginRuntime.setPaymentSecure(true);
         int displayId = -1;
         try {
             IBinder callback;
@@ -180,12 +191,12 @@ public final class RootDisplayClient {
             wrap.setAccessible(true);
             VirtualDisplay result = (VirtualDisplay) wrap.invoke(global, config, token, displayId);
             if (result == null) throw new IllegalStateException("Cannot wrap root display " + displayId);
-            Log.i(TAG, "Original secure payment display ready id=" + displayId + ", size=" + width + "x" + height + ", flags=" + flags);
+            Log.i(TAG, (payment ? "Original secure payment display ready id=" : "Lens display ready id=") + displayId + ", size=" + width + "x" + height + ", flags=" + flags);
             return result;
         } catch (Throwable error) {
             if (displayId >= 0) releaseFailedDisplay(displayId);
-            PluginRuntime.setPaymentSecure(false);
-            throw new IllegalStateException("Cannot create secure payment display", error);
+            if (payment) PluginRuntime.setPaymentSecure(false);
+            throw new IllegalStateException("Cannot create secure card display", error);
         }
     }
 

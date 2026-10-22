@@ -20,6 +20,7 @@ public final class PluginRuntime {
     public static boolean systemHost;
     private static Boolean lastLocked;
     private static Boolean lastShowing;
+    private static boolean lensSecureRequested;
     private static Boolean lastBouncer;
     private static android.view.View authWindow;
     private static int authFlags;
@@ -180,10 +181,14 @@ public final class PluginRuntime {
         } catch (Throwable error) { failure("show", error); }
     }
 
-    private static void requestOriginalShow() throws Exception {
+    static void showCamera() throws Exception { requestOriginalShow("camera"); }
+
+    private static void requestOriginalShow() throws Exception { requestOriginalShow("paycard"); }
+
+    private static void requestOriginalShow(String cardType) throws Exception {
         Object impl = field(plugin, "cardServiceImpl");
         impl.getClass().getMethod("onCardTriggerIntent", String.class, String.class, int.class, String.class)
-            .invoke(impl, "intent_trigger", "paycard", 0, null);
+            .invoke(impl, "intent_trigger", cardType, 0, null);
     }
 
     public static void hide() {
@@ -197,7 +202,7 @@ public final class PluginRuntime {
             MAIN.post(() -> setPaymentSecure(secure)); return;
         }
         paySecureRequested = secure;
-        applyPaymentSecure(paySecureRequested || campusSecureRequested);
+        applyPaymentSecure(paySecureRequested || campusSecureRequested || lensSecureRequested);
     }
 
     static void setCampusSecure(boolean secure) {
@@ -205,7 +210,15 @@ public final class PluginRuntime {
             MAIN.post(() -> setCampusSecure(secure)); return;
         }
         campusSecureRequested = secure;
-        applyPaymentSecure(paySecureRequested || campusSecureRequested);
+        applyPaymentSecure(paySecureRequested || campusSecureRequested || lensSecureRequested);
+    }
+
+    static void setLensSecure(boolean secure) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            MAIN.post(() -> setLensSecure(secure)); return;
+        }
+        lensSecureRequested = secure;
+        applyPaymentSecure(paySecureRequested || campusSecureRequested || lensSecureRequested);
     }
 
     private static void applyPaymentSecure(boolean secure) {
