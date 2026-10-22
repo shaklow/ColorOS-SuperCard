@@ -57,7 +57,7 @@ final class DhuMaterialUi {
             if (icon != 0) {
                 try {
                     Drawable drawable = context.getResources().getDrawable(icon, context.getTheme());
-                    settings.getClass().getMethod("setIcon", Drawable.class).invoke(settings, drawable);
+                    settings.getClass().getMethod("setGlyph", Drawable.class).invoke(settings, drawable);
                 } catch (ReflectiveOperationException | RuntimeException ignored) { /* bundled standard icon */ }
             }
         }
@@ -88,6 +88,11 @@ final class DhuMaterialUi {
             Log.w("SuperCardDhuUi", "Embedded M3E surface unavailable", error);
             return new Surface(host);
         }
+    }
+
+    static View lens(Context host) throws Exception { return createView(host, "createLens"); }
+    static void renderLens(View root, android.os.Bundle values) throws Exception {
+        factory.getMethod("renderLens", View.class, android.os.Bundle.class).invoke(null, root, values);
     }
 
     static View expanded(Context host) throws Exception { return createView(host, "createExpanded"); }

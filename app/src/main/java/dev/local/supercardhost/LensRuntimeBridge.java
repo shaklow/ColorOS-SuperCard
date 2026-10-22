@@ -154,6 +154,10 @@ public final class LensRuntimeBridge {
             // Names and choices now come from the bundled resources and fixed mode list.
             module.hook(method(initializer, "queryCameraFuncNameChanged")).intercept(chain -> null);
             installUnlockContinuation(module, loader);
+            try { LensSurfaceBridge.install(module, loader); }
+            catch (Exception | LinkageError error) {
+                Log.w(TAG, "Floating M3E surface unavailable; keeping original Lens UI", error);
+            }
             Class<?> compose = loader.loadClass("androidx.compose.foundation.lazy.LazyDslKt");
             Log.i(TAG, "Original Lens Compose loader=" + compose.getClassLoader());
             INSTALLED.add(loader);

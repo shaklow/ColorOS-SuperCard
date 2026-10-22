@@ -56,6 +56,7 @@ jobs:
         shell: pwsh
         env:
           COMPARE_REFERENCE: ${{ inputs.compare_reference }}
+          SUPERCARD_PREVIEW_DIR: ${{ github.workspace }}/dist/ui-previews
         run: |
           if ($env:COMPARE_REFERENCE -eq 'true') { ./ci/build.ps1 }
           else { ./ci/build.ps1 -SkipReference }
@@ -74,6 +75,7 @@ jobs:
             dist/SHA256SUMS.txt
             dist/resource-verification.json
             dist/apk-fingerprint.json
+            dist/ui-previews/
             dist/comparison.json
             app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           if-no-files-found: error
@@ -89,6 +91,7 @@ jobs:
             dhu-ui/build/test-results/
             dist/comparison.json
             dist/apk-fingerprint.json
+            dist/ui-previews/
           if-no-files-found: ignore
           retention-days: 7
       - name: 清理签名临时文件
@@ -125,6 +128,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'SDK 安装失败' }
           "ANDROID_HOME=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: 使用临时调试签名编译与合包
+        env:
+          SUPERCARD_PREVIEW_DIR: ${{ github.workspace }}/dist/ui-previews
         shell: pwsh
         run: ./ci/build.ps1 -SkipReference
       - name: 上传 PR 测试安装包
@@ -136,6 +141,7 @@ jobs:
             dist/SHA256SUMS.txt
             dist/resource-verification.json
             dist/apk-fingerprint.json
+            dist/ui-previews/
           if-no-files-found: error
           retention-days: 7
       - name: 上传设备启动测试 APK
@@ -158,7 +164,7 @@ jobs:
           retention-days: 7
 
   settings-startup:
-    name: Android 36 设置启动回归
+    name: Android 36 浮层与设置回归
     needs: [build, pull-request]
     if: always() && (needs.build.result == 'success' || needs.pull-request.result == 'success')
     runs-on: ubuntu-24.04
@@ -182,7 +188,7 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: 安装并启动真实设置页面
+      - name: 安装并验证浮层与设置页面
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
         with:
           api-level: 36

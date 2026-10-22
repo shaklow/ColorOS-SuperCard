@@ -3,14 +3,26 @@ package dev.local.supercardhost
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.os.Bundle
+import android.view.View
 import android.widget.Toast
 
-/** Existing launcher component now opens the settings hub; OEM card management stays reachable. */
+/** Desktop and LSPosed manage settings; gestures continue to use the original floating window. */
 class HostActivity : M3eSettingsActivity() {
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         title = "超级卡包"
         if (!showPage("home")) return
+        ui.on("show_cards") {
+            val button = ui.view<View>("show_cards")
+            button.isEnabled = false
+            CardConfiguration.request(this, "openLegacyCards", null) { _, error ->
+                if (alive()) {
+                    button.isEnabled = true
+                    if (error == null) finish()
+                    else Toast.makeText(this, error, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
         ui.on("open_cards") { open("com.vivo.card.setting.CardSettingActivity") }
         ui.on("open_runtime") { open("$packageName.HostToolsActivity") }
         ui.on("open_campus") { open("$packageName.DhuPaySettingsActivity") }

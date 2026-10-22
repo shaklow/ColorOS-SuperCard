@@ -3,7 +3,7 @@
     android:layout_width="match_parent" android:layout_height="match_parent">
     <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent"
         android:orientation="vertical" android:padding="16dp">
-        <LinearLayout android:layout_width="match_parent" android:layout_height="48dp"
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
             android:gravity="center_vertical" android:orientation="horizontal">
             <com.google.android.material.imageview.ShapeableImageView android:layout_width="36dp"
                 android:layout_height="36dp" android:padding="8dp" android:src="@drawable/dhu_ic_school"
@@ -15,20 +15,20 @@
                     android:layout_height="wrap_content" android:text="@string/dhu_title" android:textSize="18sp"
                     android:textAppearance="?attr/textAppearanceTitleMedium" android:maxLines="1" android:ellipsize="end" />
                 <com.google.android.material.textview.MaterialTextView android:layout_width="match_parent"
-                    android:layout_height="wrap_content" android:text="@string/dhu_account" android:textSize="12sp"
+                    android:layout_height="wrap_content" android:tag="dhu_account" android:text="@string/dhu_account" android:textSize="12sp"
                     android:textColor="?attr/colorOnSurfaceVariant" android:maxLines="1" android:ellipsize="end" />
             </LinearLayout>
-            <com.google.android.material.button.MaterialButton style="?attr/materialIconButtonStyle"
+            <dev.local.supercardui.CardIconButton
                 android:tag="dhu_settings" android:layout_width="48dp" android:layout_height="48dp"
                 android:contentDescription="@string/dhu_settings" app:icon="@drawable/dhu_ic_settings" />
         </LinearLayout>
         <com.google.android.material.card.MaterialCardView style="@style/Dhu.CodeSurface"
             android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
-            android:layout_marginTop="12dp">
+            android:layout_marginTop="8dp">
             <FrameLayout android:layout_width="match_parent" android:layout_height="match_parent">
                 <LinearLayout android:tag="dhu_codes" android:layout_width="match_parent"
                     android:layout_height="match_parent" android:orientation="vertical"
-                    android:gravity="center_horizontal" android:padding="10dp" android:visibility="invisible">
+                    android:gravity="center_horizontal" android:padding="8dp" android:visibility="invisible">
                     <ImageView android:tag="dhu_qr" android:layout_width="match_parent"
                         android:layout_height="0dp" android:layout_weight="1" android:scaleType="fitCenter"
                         android:background="#FFFFFFFF" android:contentDescription="@string/dhu_qr_description" />
@@ -57,7 +57,7 @@
             </FrameLayout>
         </com.google.android.material.card.MaterialCardView>
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="vertical" android:layout_marginTop="14dp" android:paddingHorizontal="4dp">
+            android:orientation="vertical" android:layout_marginTop="10dp" android:paddingHorizontal="4dp">
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:gravity="center_vertical" android:orientation="horizontal">
                 <com.google.android.material.textview.MaterialTextView android:tag="dhu_status"
@@ -72,7 +72,7 @@
             <com.google.android.material.progressindicator.LinearProgressIndicator
                 style="@style/Widget.Material3Expressive.LinearProgressIndicator"
                 android:tag="dhu_progress" android:layout_width="match_parent" android:layout_height="4dp"
-                android:layout_marginTop="10dp" android:max="60" android:visibility="invisible"
+                android:layout_marginTop="8dp" android:max="60" android:visibility="invisible"
                 app:trackThickness="4dp" app:trackCornerRadius="2dp" />
         </LinearLayout>
     </LinearLayout>

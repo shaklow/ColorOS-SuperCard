@@ -14,6 +14,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw '东华校园卡协议与编码测试失败' }
     python tools/test_pay_users.py
     if ($LASTEXITCODE -ne 0) { throw 'PAY 用户路由离线测试失败' }
+    python tools/test_floating_lens.py
+    if ($LASTEXITCODE -ne 0) { throw 'Floating lens binding tests failed' }
     python tools/test_pay_startup.py
     if ($LASTEXITCODE -ne 0) { throw 'PAY 启动退避离线测试失败' }
     python tools/rebuild_assets.py
