@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.RippleDrawable
 import android.view.View
@@ -212,6 +213,25 @@ class PayCardAppearanceTest {
 
     private fun bindings(frame: ImageView, logo: ImageView, settings: ImageView, hint: TextView): Array<View> =
         arrayOf(frame, logo, settings, hint, View(frame.context), LinearLayout(frame.context))
+
+    @Test fun artworkInvalidatesCachedFrameWhenBottomAreaMoves() {
+        val context = androidx.appcompat.view.ContextThemeWrapper(RuntimeEnvironment.getApplication(), R.style.Theme_DhuUi)
+        val actions = LinearLayout(context)
+        val artwork = PayIdleArtwork(context, actions)
+        var invalidations = 0
+        artwork.callback = object : Drawable.Callback {
+            override fun invalidateDrawable(who: Drawable) { invalidations++ }
+            override fun scheduleDrawable(who: Drawable, what: Runnable, at: Long) = Unit
+            override fun unscheduleDrawable(who: Drawable, what: Runnable) = Unit
+        }
+        artwork.attach()
+        actions.layout(0, 300, 280, 450)
+        assertTrue("Shortcut area changes must redraw the cached frame", invalidations > 0)
+        artwork.dispose()
+        val before = invalidations
+        actions.layout(0, 100, 280, 450)
+        assertEquals("Replacing the background must remove its old layout observer", before, invalidations)
+    }
 
     private fun assertTransparentCorners(image: Bitmap, x: Int, y: Int) {
         for ((px, py) in listOf(x to y, image.width - 1 - x to y,

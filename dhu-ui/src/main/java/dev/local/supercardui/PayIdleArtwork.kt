@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.ColorFilter
 import android.graphics.PixelFormat
 import android.graphics.drawable.Drawable
+import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.content.res.AppCompatResources
 import com.google.android.material.shape.MaterialShapeDrawable
@@ -22,6 +23,11 @@ internal class PayIdleArtwork(context: Context, actions: ViewGroup) : Drawable()
     ).apply { fillColor = ColorStateList.valueOf(d.color(com.google.android.material.R.attr.colorPrimaryContainer)) }
     private val glyph = requireNotNull(AppCompatResources.getDrawable(context, R.drawable.pay_ic_wallet))
         .mutate().apply { setTint(d.color(com.google.android.material.R.attr.colorOnPrimaryContainer)) }
+    private val layoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> invalidateSelf() }
+
+    // Sibling layout changes must invalidate the frame's cached hardware display list too.
+    fun attach() { actions.get()?.addOnLayoutChangeListener(layoutListener) }
+    fun dispose() { actions.get()?.removeOnLayoutChangeListener(layoutListener) }
 
     override fun draw(canvas: Canvas) {
         // Reserve the real OEM shortcut/bill area, including changes to the enabled functions.

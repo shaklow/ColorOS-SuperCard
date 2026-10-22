@@ -40,7 +40,8 @@ object PayCardAppearance {
         val actions = views[5] as ViewGroup
         // Prepare dependencies before changing any OEM view.
         val surface = ColorStateList.valueOf(d.color(com.google.android.material.R.attr.colorSurfaceContainerLow))
-        val frameBackground = LayerDrawable(arrayOf(shape(d, surface, 28), PayIdleArtwork(context, actions)))
+        val artwork = PayIdleArtwork(context, actions)
+        val frameBackground = LayerDrawable(arrayOf(shape(d, surface, 28), artwork))
         val shadowBackground = shape(d, surface, 28)
         val primary = d.color(androidx.appcompat.R.attr.colorPrimary)
         val foreground = d.color(com.google.android.material.R.attr.colorOnSurfaceVariant)
@@ -50,7 +51,11 @@ object PayCardAppearance {
             ColorStateList.valueOf(d.color(androidx.appcompat.R.attr.colorControlHighlight)),
             buttonBackground, shape(d, ColorStateList.valueOf(Color.WHITE), 24)
         )
+        (frame.background as? LayerDrawable)?.let { previous ->
+            for (index in 0 until previous.numberOfLayers) (previous.getDrawable(index) as? PayIdleArtwork)?.dispose()
+        }
         frame.background = frameBackground
+        artwork.attach()
         // OEM bg_shadow is a 20dp translucent white fill, not just an external shadow.
         // Match both silhouettes so it cannot show through the 28dp foreground corners.
         // Keep its original elevation, fade visibility, animation and layout ownership.
