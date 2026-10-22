@@ -14,7 +14,7 @@ LENS 仅拦截原 `CameraCardView.initComposeView()`，将内部 Compose 内容�
 
 ## 配置与点击
 
-LENS 读取原设置页使用的 `Settings.Secure.card_setting_data`，按已保存顺序显示已开启、受支持的模式，不再使用新版 Activity 的独立偏好。原 JSON 中的完整 FunctionBean 由原加载器的 Gson 解析后，交给原 `CameraCardEventHandler.handleFunctionClick`；右上角齿轮调用原 `handleSettingsClick`。收起卡片、相机启动和锁屏解锁续接仍由原流程处理，ColorOS 相机 Intent 仍由现有适配器提供。
+LENS 读取原设置页使用的 `Settings.Secure.card_setting_data`，按已保存顺序显示已开启、受支持的模式，不再使用新版 Activity 的独立偏好。原 JSON 中的完整 FunctionBean 由原加载器的 Gson 解析后，交给原 `CameraCardEventHandler.handleFunctionClick`；右上角齿轮调用原 `handleSettingsClick`。0.2.20 起模式点击在原事件入口接入卡片内相机显示与触摸，避免原流程先收起卡片再外跳；设置继续使用原处理器。锁屏仍请求原解锁入口，成功后恢复相机卡片，详见 [卡片内相机](lens-embedded-camera.md)。
 
 内容仅在挂载期间观察配置变化；退出时移除观察器和排队任务。宿主与私有 `dhu-ui.apk` 仅交换框架 Context / View / Bundle / String，MDC、AndroidX 和原厂 FunctionBean 不跨越私有 UI 的 ClassLoader。没有为浮层引入 Compose Lifecycle / SavedState 宿主依赖。
 

@@ -14,6 +14,10 @@ import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.LayerDrawable;
 import android.hardware.display.DisplayManager;
+import android.hardware.display.VirtualDisplay;
+import android.view.TextureView;
+import android.view.Surface;
+import android.view.MotionEvent;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
@@ -24,6 +28,8 @@ import android.view.WindowManager;
 import android.widget.FrameLayout;
 import java.io.FileInputStream;
 import java.lang.reflect.Method;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
@@ -41,7 +47,7 @@ public final class SettingsStartupTest extends Instrumentation {
             checkPage("DhuPaySettingsActivity", "url", null);
             checkFloatingWindow();
             checkFloatingSessions();
-            result.putString("stream", "Settings startup: 4 entry points passed\nFloating cards: window embedding passed\nFloating lifecycle: detach/reattach passed\n");
+            result.putString("stream", "Settings startup: 4 entry points passed\nFloating cards: window embedding passed\nFloating lifecycle: detach/reattach passed\nLens display: embedded activity and touch passed\n");
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
             result.putString("stream", android.util.Log.getStackTraceString(error));
@@ -153,10 +159,100 @@ public final class SettingsStartupTest extends Instrumentation {
                 throw new AssertionError("Floating controls should work in the same window without opening a dashboard");
             main(() -> checkPayAppearance(owner.get(), target.getClassLoader()));
             if (dashboard.getHits() != 0) throw new AssertionError("PAY styling must not launch a dashboard");
+            checkLensDisplay(owner.get());
         } finally {
             try {
                 main(() -> { if (owner.get() != null && owner.get().isAttachedToWindow()) manager.get().removeViewImmediate(owner.get()); });
             } finally { removeMonitor(dashboard); shell("appops set " + pkg + " SYSTEM_ALERT_WINDOW " + previous); }
+        }
+    }
+
+    /** Real secondary display + production activity/input adapter, without depending on an OEM camera APK. */
+    private void checkLensDisplay(FrameLayout card) throws Exception {
+        Context target = getTargetContext();
+        AtomicReference<TextureView> texture = new AtomicReference<>();
+        AtomicReference<Surface> output = new AtomicReference<>();
+        AtomicReference<VirtualDisplay> display = new AtomicReference<>();
+        AtomicInteger clicks = new AtomicInteger();
+        CountDownLatch clicked = new CountDownLatch(1);
+        Activity activity = null;
+        ActivityMonitor monitor = addMonitor(target.getPackageName() + ".HostActivity", null, false);
+        getUiAutomation().adoptShellPermissionIdentity();
+        try {
+            target.getClassLoader().loadClass("org.lsposed.hiddenapibypass.HiddenApiBypass")
+                    .getMethod("addHiddenApiExemptions", String[].class).invoke(null, (Object) new String[]{"Landroid/"});
+            main(() -> {
+                TextureView view = new TextureView(card.getContext()); texture.set(view);
+                card.addView(view, new FrameLayout.LayoutParams(-1, -1));
+            });
+            waitForIdleSync(); SystemClock.sleep(500); waitForIdleSync();
+            main(() -> {
+                TextureView view = texture.get();
+                if (!view.isAvailable()) throw new AssertionError("Lens texture unavailable");
+                view.getSurfaceTexture().setDefaultBufferSize(600, 900);
+                Surface surface = new Surface(view.getSurfaceTexture()); output.set(surface);
+                // Use the production touch/focus/group/rotation/removal policy, without
+                // SECURE. Secure root creation remains a separate target-ROM boundary.
+                display.set(target.getSystemService(DisplayManager.class).createVirtualDisplay(
+                        "SuperCard_Lens_Test", 600, 900, 240, surface, 19917 & ~DisplayManager.VIRTUAL_DISPLAY_FLAG_SECURE));
+            });
+            int id = display.get().getDisplay().getDisplayId();
+            if (id <= 0) throw new AssertionError("Lens selected the main display");
+            Class<?> backendType = target.getClassLoader().loadClass(target.getPackageName() + ".LensDisplayBackend");
+            Object backend = backendType.getConstructor(Context.class).newInstance(target);
+            Intent intent = new Intent().setClassName(target.getPackageName(), target.getPackageName() + ".HostActivity")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
+            backendType.getMethod("launch", Intent.class, int.class).invoke(backend, intent, id);
+            activity = monitor.waitForActivityWithTimeout(10_000);
+            if (activity == null || activity.getDisplay().getDisplayId() != id)
+                throw new AssertionError("Lens activity escaped to the main display");
+            Activity current = activity;
+            CountDownLatch laidOut = new CountDownLatch(1);
+            AtomicReference<View> control = new AtomicReference<>();
+            main(() -> {
+                Runnable ready = () -> {
+                    View button = current.getWindow().getDecorView().findViewWithTag("settings_show_cards");
+                    if (button != null && button.getWidth() > 0 && button.getHeight() > 0 && current.hasWindowFocus()) {
+                        control.set(button); laidOut.countDown();
+                    }
+                };
+                // Wait for a laid-out control in the visible secondary window, rather
+                // than assuming the first traversal has finished after launch.
+                current.getWindow().getDecorView().getViewTreeObserver().addOnGlobalLayoutListener(ready::run);
+                current.getWindow().getDecorView().getViewTreeObserver()
+                        .addOnWindowFocusChangeListener(focused -> ready.run());
+                ready.run();
+            });
+            if (!laidOut.await(10, TimeUnit.SECONDS))
+                throw new AssertionError("Lens control did not finish secondary-display content/layout/focus");
+            int[] location = new int[2];
+            main(() -> {
+                View button = control.get();
+                button.setOnClickListener(v -> { clicks.incrementAndGet(); clicked.countDown(); });
+                button.getLocationOnScreen(location);
+                location[0] += button.getWidth() / 2; location[1] += button.getHeight() / 2;
+            });
+            long down = SystemClock.uptimeMillis();
+            Method inject = backendType.getMethod("inject", MotionEvent.class, int.class);
+            for (int action : new int[]{MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP}) {
+                MotionEvent event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, location[0], location[1], 0);
+                event.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+                try { if (!Boolean.TRUE.equals(inject.invoke(backend, event, id))) throw new AssertionError("Lens input rejected"); }
+                finally { event.recycle(); }
+            }
+            if (!clicked.await(5, TimeUnit.SECONDS) || clicks.get() != 1)
+                throw new AssertionError("Lens touch did not reach the embedded activity: " + clicks.get());
+        } finally {
+            try {
+                if (activity != null) { Activity current = activity; main(current::finish); }
+                main(() -> {
+                    try { if (display.get() != null) display.get().release(); }
+                    finally {
+                        if (output.get() != null) output.get().release();
+                        if (texture.get() != null) card.removeView(texture.get());
+                    }
+                });
+            } finally { removeMonitor(monitor); getUiAutomation().dropShellPermissionIdentity(); }
         }
     }
 

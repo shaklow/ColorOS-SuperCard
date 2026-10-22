@@ -28,7 +28,7 @@ import org.lsposed.hiddenapibypass.HiddenApiBypass;
 /**
  * Root app_process endpoint for the original SuperCard secure virtual display.
  *
- * Only SystemUI may connect. The endpoint creates one specifically named display;
+ * Only SystemUI may connect. The endpoint permits one PAY and one LENS display;
  * it does not expose arbitrary system service calls or alter application security
  * flags. The client owns the display callback token after creation, while this
  * process retains the real VirtualDisplay and releases it on client death, then
@@ -40,7 +40,6 @@ public final class RootDisplayDaemon extends Binder {
     private static final String MODULE_PACKAGE = "dev.local.supercardhost";
     private static final String ACTION = "dev.local.supercardhost.ROOT_DISPLAY_SERVICE";
     private static final String DESCRIPTOR = "dev.local.supercardhost.RootDisplay.v1";
-    private static final String DISPLAY_NAME = "SuperCard_Virtual";
     private static final int HELLO = IBinder.FIRST_CALL_TRANSACTION;
     private static final int CREATE = IBinder.FIRST_CALL_TRANSACTION + 1;
     private static final int RELEASE = IBinder.FIRST_CALL_TRANSACTION + 2;
@@ -62,9 +61,15 @@ public final class RootDisplayDaemon extends Binder {
 
     // Access to these fields is serialized by lock, including Binder thread calls.
     private IBinder clientLifetime;
-    private VirtualDisplay activeDisplay;
-    private Surface receivedSurface;
-    private int activeDisplayId = Display.INVALID_DISPLAY;
+    private static final class DisplayRecord {
+        final VirtualDisplay display;
+        final Surface surface;
+        final int id;
+        DisplayRecord(VirtualDisplay display, Surface surface, int id) {
+            this.display = display; this.surface = surface; this.id = id;
+        }
+    }
+    private final CardDisplaySlots<DisplayRecord> displays = new CardDisplaySlots<>();
     private boolean closed;
 
     private RootDisplayDaemon(Context context, String nonce) throws Exception {
@@ -251,7 +256,6 @@ public final class RootDisplayDaemon extends Binder {
         try {
             int flags = data.readInt();
             data.enforceNoDataAvail();
-            if (!DISPLAY_NAME.equals(name)) throw new IllegalArgumentException("Unexpected display name");
             // Match vivo's VirtualDisplayWrapper: pass the card's own geometry and
             // density to DisplayManager. Virtual displays need not fit the physical
             // screen or use its DPI (including after a resolution/fold-state change).
@@ -271,11 +275,11 @@ public final class RootDisplayDaemon extends Binder {
 
             synchronized (lock) {
                 requireClientLocked();
-                if (activeDisplay != null) {
-                    throw new IllegalStateException("Release the active display before creating another");
-                }
+                displays.requireAvailable(name);
                 long identity = Binder.clearCallingIdentity();
                 VirtualDisplay created = null;
+                int createdId = -1;
+                boolean registered = false;
                 try {
                     created = displayManager.createVirtualDisplay(name,
                             width, height, density, surface, flags);
@@ -287,9 +291,9 @@ public final class RootDisplayDaemon extends Binder {
                     if (displayId <= Display.DEFAULT_DISPLAY) {
                         throw new IllegalStateException("DisplayManager returned an invalid display ID");
                     }
-                    activeDisplay = created;
-                    activeDisplayId = displayId;
-                    receivedSurface = surface;
+                    displays.add(name, displayId, new DisplayRecord(created, surface, displayId));
+                    createdId = displayId;
+                    registered = true;
                     retained = true;
                     reply.writeNoException();
                     reply.writeInt(displayId);
@@ -297,6 +301,7 @@ public final class RootDisplayDaemon extends Binder {
                     Log.i(TAG, "Created secure SuperCard display " + displayId
                             + " " + width + "x" + height + " density=" + density);
                 } catch (Throwable failure) {
+                    if (registered) displays.remove(createdId);
                     if (created != null) {
                         try {
                             created.release();
@@ -304,9 +309,6 @@ public final class RootDisplayDaemon extends Binder {
                             Log.w(TAG, "Failed to release an incomplete display", releaseFailure);
                         }
                     }
-                    activeDisplay = null;
-                    activeDisplayId = Display.INVALID_DISPLAY;
-                    receivedSurface = null;
                     retained = false;
                     throw failure;
                 } finally {
@@ -323,20 +325,10 @@ public final class RootDisplayDaemon extends Binder {
         data.enforceNoDataAvail();
         synchronized (lock) {
             requireClientLocked();
-            if (activeDisplay == null) {
-                // DMS may already have released the callback token client-side.
-                reply.writeNoException();
-                return;
-            }
-            if (displayId != activeDisplayId) {
-                throw new IllegalArgumentException("Display ID does not match the active display");
-            }
+            DisplayRecord owned = displays.remove(displayId);
             long identity = Binder.clearCallingIdentity();
-            try {
-                releaseDisplayLocked();
-            } finally {
-                Binder.restoreCallingIdentity(identity);
-            }
+            try { releaseDisplay(owned); }
+            finally { Binder.restoreCallingIdentity(identity); }
         }
         reply.writeNoException();
     }
@@ -434,20 +426,18 @@ public final class RootDisplayDaemon extends Binder {
     }
 
     private void releaseDisplayLocked() {
-        VirtualDisplay display = activeDisplay;
-        Surface surface = receivedSurface;
-        int displayId = activeDisplayId;
-        activeDisplay = null;
-        receivedSurface = null;
-        activeDisplayId = Display.INVALID_DISPLAY;
-        try {
-            if (display != null) display.release();
-        } catch (Throwable failure) {
-            Log.w(TAG, "Could not explicitly release secure display " + displayId, failure);
-        } finally {
-            if (surface != null) surface.release();
+        for (DisplayRecord display : displays.drain()) releaseDisplay(display);
+    }
+
+    private void releaseDisplay(DisplayRecord owned) {
+        if (owned == null) return;
+        try { owned.display.release(); }
+        catch (Throwable failure) { Log.w(TAG, "Could not explicitly release secure display " + owned.id, failure); }
+        finally {
+            try { owned.surface.release(); }
+            catch (Throwable failure) { Log.w(TAG, "Could not release received surface " + owned.id, failure); }
         }
-        if (display != null) Log.i(TAG, "Released secure SuperCard display " + displayId);
+        Log.i(TAG, "Released secure SuperCard display " + owned.id);
     }
 
     private static Throwable unwrap(Throwable failure) {

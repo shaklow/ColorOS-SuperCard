@@ -1,6 +1,5 @@
 package dev.local.supercardhost;
 
-import android.app.KeyguardManager;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
@@ -11,13 +10,10 @@ import android.widget.Toast;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.File;
-import java.io.FileOutputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
 
@@ -153,13 +149,11 @@ public final class LensRuntimeBridge {
             // This old provider only reports vivo's alternate localized mode names.
             // Names and choices now come from the bundled resources and fixed mode list.
             module.hook(method(initializer, "queryCameraFuncNameChanged")).intercept(chain -> null);
-            installUnlockContinuation(module, loader);
+            LensCameraBridge.install(module, loader);
             try { LensSurfaceBridge.install(module, loader); }
             catch (Exception | LinkageError error) {
                 Log.w(TAG, "Floating M3E surface unavailable; keeping original Lens UI", error);
             }
-            Class<?> compose = loader.loadClass("androidx.compose.foundation.lazy.LazyDslKt");
-            Log.i(TAG, "Original Lens Compose loader=" + compose.getClassLoader());
             INSTALLED.add(loader);
             Log.i(TAG, "Original Lens capability and launch bridge installed");
         } catch (Throwable error) { Log.e(TAG, "Cannot install Lens adapter", error); }
@@ -172,54 +166,6 @@ public final class LensRuntimeBridge {
         LensSettingsValues.addMasterFunction(config, enableNew);
     }
     public static void prepareConfiguration(Context host) { LensSettingsValues.prepareConfiguration(host); }
-
-    private static void installUnlockContinuation(XposedModule module, ClassLoader loader) throws Exception {
-        Class<?> handler = loader.loadClass("com.vivo.card.cards.cardcamera.handler.CameraCardEventHandler");
-        Class<?> function = loader.loadClass("com.vivo.card.model.CardSetBean$CardBean$FunctionBean");
-        Field contextField = field(handler, "context");
-        Method expanded = method(handler, "isCardExpanded");
-        Method start = method(handler, "startCameraFunction", Context.class, function);
-        Method requestUnlock = method(handler, "requestUnlock", Context.class);
-        Class<?> invalidation = loader.loadClass("com.vivo.card.helper.InvalidateRegionHelper");
-        Method invalidationInstance = method(invalidation, "getInstance");
-        Method setCardShow = method(invalidation, "setCardShow", boolean.class);
-        Map<Object, Object> pending = Collections.synchronizedMap(new WeakHashMap<>());
-        module.hook(method(handler, "handleFunctionClick", Context.class, function)).intercept(chain -> {
-            Object owner = chain.getThisObject();
-            Context context = (Context) chain.getArg(0);
-            KeyguardManager keyguard = context.getSystemService(KeyguardManager.class);
-            if (keyguard != null && keyguard.isKeyguardLocked() && Boolean.TRUE.equals(expanded.invoke(owner))) {
-                pending.put(owner, chain.getArg(1));
-                setCardShow.invoke(invalidationInstance.invoke(null), false);
-                // The original isUserUnlocked checks credential storage, which stays
-                // unlocked after the first boot unlock. Use the real screen lock here.
-                requestUnlock.invoke(owner, context);
-                return null;
-            }
-            pending.remove(owner);
-            return chain.proceed();
-        });
-        module.hook(method(handler, "handleSettingsClick", Context.class)).intercept(chain -> {
-            pending.remove(chain.getThisObject());
-            return chain.proceed();
-        });
-        module.hook(method(handler, "resetPendingKeyguardRequest")).intercept(chain -> {
-            pending.remove(chain.getThisObject());
-            return chain.proceed();
-        });
-        module.hook(method(handler, "onKeyguardSuccess")).intercept(chain -> {
-            Object owner = chain.getThisObject();
-            Object selected = pending.remove(owner);
-            Object result = chain.proceed();
-            if (selected != null) {
-                Context context = (Context) contextField.get(owner);
-                KeyguardManager keyguard = context.getSystemService(KeyguardManager.class);
-                if (keyguard != null && !keyguard.isKeyguardLocked() && !keyguard.isDeviceLocked())
-                    start.invoke(owner, context, selected);
-            }
-            return result;
-        });
-    }
 
     private static void toast(Context context, String message) {
         MAIN.post(() -> Toast.makeText(context, message, Toast.LENGTH_LONG).show());

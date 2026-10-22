@@ -15,6 +15,8 @@ try {
     python tools/test_pay_users.py
     if ($LASTEXITCODE -ne 0) { throw 'PAY 用户路由离线测试失败' }
     python tools/test_floating_lens.py
+    if ($LASTEXITCODE -ne 0) { throw "Floating Lens regression failed" }
+    python tools/test_lens_camera.py
     if ($LASTEXITCODE -ne 0) { throw 'Floating lens binding tests failed' }
     python tools/test_pay_chrome_abi.py
     if ($LASTEXITCODE -ne 0) { throw 'PAY appearance ABI check failed' }
