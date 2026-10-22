@@ -212,12 +212,15 @@ public final class SettingsStartupTest extends Instrumentation {
                 View button = current.getWindow().getDecorView().findViewWithTag("show_cards");
                 if (button == null) throw new AssertionError("Lens test control missing");
                 control.set(button);
-                if (button.getWidth() > 0 && button.getHeight() > 0) laidOut.countDown();
-                else button.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> {
-                    if (r > l && b > t) laidOut.countDown();
-                });
+                Runnable ready = () -> {
+                    if (button.getWidth() > 0 && button.getHeight() > 0 && current.hasWindowFocus()) laidOut.countDown();
+                };
+                button.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> ready.run());
+                current.getWindow().getDecorView().getViewTreeObserver()
+                        .addOnWindowFocusChangeListener(focused -> ready.run());
+                ready.run();
             });
-            if (!laidOut.await(10, TimeUnit.SECONDS)) throw new AssertionError("Lens control did not finish secondary-display layout");
+            if (!laidOut.await(10, TimeUnit.SECONDS)) throw new AssertionError("Lens control did not finish secondary-display layout/focus");
             int[] location = new int[2];
             main(() -> {
                 View button = control.get();
