@@ -78,7 +78,7 @@ public class DhuCardSurfaceTest {
         root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY));
         root.layout(0, 0, width, height);
-        assertTrue("QR area must remain usable", tag(root, "qr").getHeight() >= 128 * density);
+        assertTrue("QR area must remain usable: " + tag(root, "qr").getHeight() / density + "dp", tag(root, "qr").getHeight() >= 128 * density);
         assertTrue("Barcode must have a measurable scan area", tag(root, "barcode").getWidth() >= 200 * density);
         TextView account = (TextView) tag(root, "account");
         View heading = (View) account.getParent().getParent();
