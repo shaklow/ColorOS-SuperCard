@@ -1,9 +1,12 @@
 package dev.local.supercardui
 
+import android.app.Activity
+import android.content.ClipData
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Bundle
+import android.os.Looper
 import android.view.DragEvent
 import android.view.View
 import android.view.ViewGroup
@@ -15,6 +18,8 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Robolectric
+import org.robolectric.Shadows
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
@@ -77,15 +82,21 @@ class CardManagementSurfaceTest {
     }
 
     @Test fun dragDropOnlyAcceptsThisPagesCurrentLocalCard() {
-        val root = page(); val events = mutableListOf<Bundle>()
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val root = CardManagementSurface.create(activity); val events = mutableListOf<Bundle>()
+        activity.setContentView(root)
         CardManagementSurface.bind(root, Consumer { events.add(it) }); CardManagementSurface.render(root, state())
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
         val dragType = Class.forName("dev.local.supercardui.CardManagementSurface\$Page\$Drag")
         fun local(page: View) = dragType.getDeclaredConstructor(page.tag.javaClass, String::class.java)
             .apply { isAccessible = true }.newInstance(page.tag, "pay")
         fun event(action: Int, local: Any): DragEvent = ReflectionHelpers.callConstructor(DragEvent::class.java).apply {
             ReflectionHelpers.setField(this, "mAction", action); ReflectionHelpers.setField(this, "mLocalState", local)
+            val clip = ClipData.newPlainText("cards", "")
+            ReflectionHelpers.setField(this, "mClipData", clip); ReflectionHelpers.setField(this, "mClipDescription", clip.description)
         }
         val target = root.named<View>("card_camera")
+        assertTrue("Drag dispatch requires an attached ViewRoot", target.isAttachedToWindow)
         assertFalse(target.dispatchDragEvent(event(DragEvent.ACTION_DRAG_STARTED, Any())))
         assertFalse(target.dispatchDragEvent(event(DragEvent.ACTION_DRAG_STARTED, local(page()))))
         val own = local(root)
@@ -95,6 +106,7 @@ class CardManagementSurfaceTest {
         CardManagementSurface.render(root, state(busy = true))
         assertFalse(target.dispatchDragEvent(event(DragEvent.ACTION_DROP, own)))
         assertEquals(1, events.size)
+        activity.finish()
     }
 
     @Test @GraphicsMode(GraphicsMode.Mode.NATIVE)
