@@ -10,6 +10,8 @@ LENS 仅拦截原 `CameraCardView.initComposeView()`，将内部 Compose 内容�
 
 界面使用官方 MDC 的 `Theme.Material3Expressive.DynamicColors.DayNight.NoActionBar`、28dp 圆角和 tonal 模式按钮。LENS 在原 280 × 450dp 卡片范围内显示两列快捷模式，深浅色跟随系统，较大字体时改为单列并在同一卡片内部滚动。校园卡和 LENS 的设置图标位于右上角，触摸区为 48dp，没有新增刷新按钮。
 
+校园卡、LENS 和 PAY 共用的外层/内层圆角、内容边距、设置按钮触摸区与图标尺寸集中在私有 UI 的 `card_dimensions.xml`。Kotlin 的 `CardDesign` 与 XML 样式/布局读取同一资源；PAY 的前景和原阴影填充也使用同一圆角来源。功能专属的扫码尺寸、原厂快捷入口几何和设置页面尺寸独立保留。此轮仅收拢定义，沿用 0.2.18 的外观。
+
 ## 配置与点击
 
 LENS 读取原设置页使用的 `Settings.Secure.card_setting_data`，按已保存顺序显示已开启、受支持的模式，不再使用新版 Activity 的独立偏好。原 JSON 中的完整 FunctionBean 由原加载器的 Gson 解析后，交给原 `CameraCardEventHandler.handleFunctionClick`；右上角齿轮调用原 `handleSettingsClick`。收起卡片、相机启动和锁屏解锁续接仍由原流程处理，ColorOS 相机 Intent 仍由现有适配器提供。

@@ -13,14 +13,14 @@ class CardIconButton @JvmOverloads constructor(context: Context, attrs: Attribut
     MaterialButton(context, attrs, com.google.android.material.R.attr.materialIconButtonStyle) {
     private var glyph: Drawable? = super.getIcon()?.mutate()
         ?: AppCompatResources.getDrawable(context, R.drawable.dhu_ic_settings)?.mutate()
-    private val size = (24 * resources.displayMetrics.density + .5f).toInt()
+    private val size = resources.getDimensionPixelSize(R.dimen.card_settings_glyph)
 
     init {
         // MDC's compound drawable can be clipped by a constrained, empty TextView.
         // Keep its shape/ripple/semantics, and draw the glyph in the full touch target.
         super.setIcon(null)
         setPadding(0, 0, 0, 0)
-        minimumWidth = (48 * resources.displayMetrics.density + .5f).toInt()
+        minimumWidth = resources.getDimensionPixelSize(R.dimen.card_settings_target)
         minimumHeight = minimumWidth
     }
 

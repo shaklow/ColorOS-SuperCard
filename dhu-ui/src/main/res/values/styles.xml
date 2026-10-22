@@ -4,14 +4,14 @@
     </style>
     <style name="Dhu.Card" parent="Widget.Material3.CardView.Filled">
         <item name="cardBackgroundColor">?attr/colorSurfaceContainerLow</item>
-        <item name="cardCornerRadius">28dp</item>
+        <item name="cardCornerRadius">@dimen/card_surface_corner</item>
         <item name="cardElevation">0dp</item>
         <item name="strokeWidth">0dp</item>
         <item name="cardPreventCornerOverlap">false</item>
     </style>
     <style name="Dhu.CodeSurface" parent="Widget.Material3.CardView.Filled">
         <item name="cardBackgroundColor">#FFFFFFFF</item>
-        <item name="cardCornerRadius">20dp</item>
+        <item name="cardCornerRadius">@dimen/card_inner_corner</item>
         <item name="cardElevation">0dp</item>
         <item name="strokeWidth">0dp</item>
         <item name="cardPreventCornerOverlap">false</item>
