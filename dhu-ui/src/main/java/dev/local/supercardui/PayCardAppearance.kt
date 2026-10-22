@@ -3,6 +3,7 @@ package dev.local.supercardui
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.RippleDrawable
 import android.view.View
 import android.view.ViewGroup
@@ -16,7 +17,7 @@ import com.google.android.material.shape.ShapeAppearanceModel
 /** Framework views cross the loader boundary; MDC types and resource IDs stay in this archive. */
 object PayCardAppearance {
     @JvmStatic fun style(resources: Context, part: String, views: Array<View>) {
-        require(views.size == 4)
+        require(views.size == if (part == "card") 6 else 4)
         val context = ContextThemeWrapper(resources, R.style.Theme_DhuUi)
         val d = CardDesign(context)
         when (part) {
@@ -35,8 +36,12 @@ object PayCardAppearance {
         val logo = views[1] as ImageView
         val settings = views[2] as ImageView
         val hint = views[3] as TextView
+        val shadow = views[4]
+        val actions = views[5] as ViewGroup
         // Prepare dependencies before changing any OEM view.
-        val frameBackground = shape(d, ColorStateList.valueOf(d.color(com.google.android.material.R.attr.colorSurfaceContainerLow)), 28)
+        val surface = ColorStateList.valueOf(d.color(com.google.android.material.R.attr.colorSurfaceContainerLow))
+        val frameBackground = LayerDrawable(arrayOf(shape(d, surface, 28), PayIdleArtwork(context, actions)))
+        val shadowBackground = shape(d, surface, 28)
         val primary = d.color(androidx.appcompat.R.attr.colorPrimary)
         val foreground = d.color(com.google.android.material.R.attr.colorOnSurfaceVariant)
         val icon = requireNotNull(AppCompatResources.getDrawable(context, R.drawable.dhu_ic_settings)).mutate().apply { setTint(foreground) }
@@ -46,6 +51,10 @@ object PayCardAppearance {
             buttonBackground, shape(d, ColorStateList.valueOf(Color.WHITE), 24)
         )
         frame.background = frameBackground
+        // OEM bg_shadow is a 20dp translucent white fill, not just an external shadow.
+        // Match both silhouettes so it cannot show through the 28dp foreground corners.
+        // Keep its original elevation, fade visibility, animation and layout ownership.
+        shadow.background = shadowBackground
         logo.imageTintList = ColorStateList.valueOf(primary)
         settings.setImageDrawable(icon)
         settings.clearColorFilter()

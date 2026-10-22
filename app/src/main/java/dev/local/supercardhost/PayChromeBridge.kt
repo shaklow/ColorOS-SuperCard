@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import android.view.View
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import io.github.libxposed.api.XposedModule
 import java.lang.reflect.Field
@@ -26,7 +27,9 @@ object PayChromeBridge {
             field(card, "cardFrame", ImageView::class.java),
             field(card, "cardLogo", ImageView::class.java),
             field(card, "cardSet", ImageView::class.java),
-            field(card, "bigFingerTip", TextView::class.java)
+            field(card, "bigFingerTip", TextView::class.java),
+            field(card, "shadowBgView", View::class.java),
+            field(card, "linearShadow", LinearLayout::class.java)
         )
         val updates = listOf("initViews", "setSkinDataToCard", "updateCurrentSkin", "onAttachedToWindow")
             .map { method(card, it) }
