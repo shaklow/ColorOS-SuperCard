@@ -90,6 +90,11 @@ final class DhuMaterialUi {
         }
     }
 
+    static View cards(Context host) throws Exception { return createView(host, "createCards"); }
+    static void renderLens(View root, android.os.Bundle values) throws Exception {
+        factory.getMethod("renderLens", View.class, android.os.Bundle.class).invoke(null, root, values);
+    }
+
     static View expanded(Context host) throws Exception { return createView(host, "createExpanded"); }
 
     static View settings(Context host, String page) throws Exception {

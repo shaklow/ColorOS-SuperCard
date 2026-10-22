@@ -108,7 +108,7 @@ public final class DhuPayView extends LinearLayout {
         KeyguardManager keyguard = services.getSystemService(KeyguardManager.class);
         if (power == null || !power.isInteractive() || keyguard == null || keyguard.isKeyguardLocked()) return false;
         Rect area = new Rect();
-        return getGlobalVisibleRect(area) && area.width() >= getWidth() * .9f && area.height() > 0;
+        return getGlobalVisibleRect(area) && area.width() >= getWidth() * .9f && area.height() >= getHeight() * .6f;
     }
 
     private final Runnable tick = new Runnable() {

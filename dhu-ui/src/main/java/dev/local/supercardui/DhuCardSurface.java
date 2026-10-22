@@ -28,6 +28,9 @@ public final class DhuCardSurface {
         return inflater(context).inflate(R.layout.dhu_expanded, null, false);
     }
 
+    public static View createCards(Context resources) { return NativeCardsSurface.create(resources); }
+    public static void renderLens(View root, android.os.Bundle values) { NativeCardsSurface.renderLens(root, values); }
+
     public static View createSettings(Context resources, String page) { return SettingsSurface.create(resources, page); }
     public static void renderSettings(View root, android.os.Bundle values) { SettingsSurface.render(root, values); }
     public static void chooseSettings(View root, String title, String[] labels, int selected, java.util.function.IntConsumer action) {

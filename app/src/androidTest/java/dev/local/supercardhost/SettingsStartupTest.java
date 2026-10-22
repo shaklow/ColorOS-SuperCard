@@ -16,15 +16,66 @@ public final class SettingsStartupTest extends Instrumentation {
         Bundle result = new Bundle();
         int checked = 0;
         try {
-            checkPage("HostActivity", "open_cards", Intent.CATEGORY_LAUNCHER); checked++;
+            checkPage("NativeCardsActivity", "settings", Intent.CATEGORY_LAUNCHER); checked++;
             checkPage("HostActivity", "open_runtime", "de.robv.android.xposed.category.MODULE_SETTINGS"); checked++;
             checkPage("HostToolsActivity", "toggle_wx_scan", null); checked++;
             checkPage("DhuPaySettingsActivity", "url", null); checked++;
+            checkPage("LensSettingsActivity", "toggle_take_photo", null); checked++;
+            checkNativeNavigation();
             result.putString("stream", "Settings startup: " + checked + " entry points passed\n");
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
+            checkPage("LensSettingsActivity", "toggle_take_photo", null); checked++;
+            checkNativeNavigation();
             result.putString("stream", android.util.Log.getStackTraceString(error));
             finish(Activity.RESULT_CANCELED, result);
+        }
+    }
+
+    private void checkNativeNavigation() throws Exception {
+        String pkg = getTargetContext().getPackageName();
+        Activity cards = startActivitySync(new Intent().setClassName(pkg, pkg + ".NativeCardsActivity")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        android.content.SharedPreferences preferences = getTargetContext().getSharedPreferences("native_cards", 0);
+        boolean existed = preferences.contains("lens");
+        java.util.Set<String> before = preferences.getStringSet("lens", java.util.Set.of());
+        try {
+            waitForIdleSync(); SystemClock.sleep(1000); waitForIdleSync();
+            runOnMainSync(() -> {
+                if ((cards.getWindow().getAttributes().flags & android.view.WindowManager.LayoutParams.FLAG_SECURE) == 0)
+                    throw new AssertionError("Campus window must be secure before rendering");
+                if (cards.getWindow().getDecorView().findViewWithTag("dhu_settings") == null)
+                    throw new AssertionError("Real campus surface missing");
+            });
+            ActivityMonitor settingsMonitor = addMonitor(pkg + ".HostActivity", null, false);
+            runOnMainSync(() -> cards.getWindow().getDecorView().findViewWithTag("native_settings").performClick());
+            Activity settings = waitForMonitorWithTimeout(settingsMonitor, 5000);
+            removeMonitor(settingsMonitor);
+            if (settings == null) throw new AssertionError("Card settings icon not connected");
+            runOnMainSync(settings::finish); waitForIdleSync();
+            ActivityMonitor lensMonitor = addMonitor(pkg + ".LensSettingsActivity", null, false);
+            runOnMainSync(() -> cards.getWindow().getDecorView().findViewWithTag("native_lens_settings").performClick());
+            Activity lens = waitForMonitorWithTimeout(lensMonitor, 5000);
+            removeMonitor(lensMonitor);
+            if (lens == null) throw new AssertionError("LENS settings icon not connected");
+            waitForIdleSync();
+            java.util.concurrent.atomic.AtomicBoolean selected = new java.util.concurrent.atomic.AtomicBoolean();
+            runOnMainSync(() -> {
+                android.widget.CompoundButton toggle = lens.getWindow().getDecorView().findViewWithTag("settings_toggle_take_photo");
+                toggle.performClick(); selected.set(toggle.isChecked());
+            });
+            if (preferences.getStringSet("lens", java.util.Set.of()).contains("take_photo") != selected.get())
+                throw new AssertionError("LENS selection not persisted");
+            runOnMainSync(lens::finish); waitForIdleSync();
+            runOnMainSync(() -> {
+                boolean visible = cards.getWindow().getDecorView().findViewWithTag("native_lens_take_photo") != null;
+                if (visible != selected.get()) throw new AssertionError("LENS selection not rendered after return");
+            });
+        } finally {
+            android.content.SharedPreferences.Editor editor = preferences.edit();
+            if (existed) editor.putStringSet("lens", before); else editor.remove("lens");
+            editor.commit();
+            runOnMainSync(cards::finish); waitForIdleSync();
         }
     }
 
@@ -48,10 +99,10 @@ public final class SettingsStartupTest extends Instrumentation {
             AtomicReference<Throwable> failure = new AtomicReference<>();
             runOnMainSync(() -> {
                 try {
-                    View view = activity.getWindow().getDecorView().findViewWithTag("settings_" + binding);
+                    View view = activity.getWindow().getDecorView().findViewWithTag((name.equals("NativeCardsActivity") ? "native_" : "settings_") + binding);
                     if (activity.isFinishing() || view == null || !view.isAttachedToWindow() || view.getWidth() <= 0)
                         throw new AssertionError(name + ": M3E page missing or not laid out");
-                    if (!view.getContext().getClassLoader().loadClass("dev.local.supercardui.SettingsSurface")
+                    if (!view.getContext().getClassLoader().loadClass("dev.local.supercardui." + (name.equals("NativeCardsActivity") ? "NativeCardsSurface" : "SettingsSurface"))
                             .getClassLoader().getClass().getName().equals("dalvik.system.DelegateLastClassLoader"))
                         throw new AssertionError(name + ": UI was not loaded from its isolated archive");
                 } catch (Throwable error) { failure.set(error); }

@@ -21,6 +21,8 @@ def verify_archive(host_apk):
         dex = b''.join(ui.read(n) for n in names if n.startswith('classes') and n.endswith('.dex'))
         for descriptor in [b'Ldev/local/supercardui/DhuCardSurface;',
                            b'Ldev/local/supercardui/SettingsSurface;',
+                           b'Ldev/local/supercardui/NativeCardsSurface;',
+                           b'Ldev/local/supercardui/CardDesign;',
                            b'Lcom/google/android/material/button/MaterialButton;',
                            b'Lcom/google/android/material/appbar/MaterialToolbar;',
                            b'Lcom/google/android/material/materialswitch/MaterialSwitch;',

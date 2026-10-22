@@ -62,14 +62,15 @@ public final class CardConfiguration {
     public static void request(Context context, String operation, Bundle values, Callback callback) {
         Intent intent = new Intent(ACTION).setPackage(SYSTEM_UI).putExtra("operation", operation);
         if (values != null) intent.putExtras(values);
-        if ("openFloatSettings".equals(operation))
+        if ("openFloatSettings".equals(operation) || "openLegacyCards".equals(operation))
             intent.putExtra(FLOAT_SETTINGS_DEADLINE, SystemClock.elapsedRealtime() + 5000);
         BroadcastOptions options = BroadcastOptions.makeBasic().setShareIdentityEnabled(true);
         // Bound read/ephemeral-preview and fixed settings-launch calls. A late callback after a service
         // restart must not wedge the client's querying/previewSending flags.
         boolean bounded = callback != null && ("query".equals(operation) || "preview".equals(operation)
                 || "openFloatSettings".equals(operation) || "diagnostics".equals(operation)
-                || "payTouch".equals(operation) || "payUser".equals(operation));
+                || "payTouch".equals(operation) || "payUser".equals(operation)
+                || "openLegacyCards".equals(operation) || "nativeCards".equals(operation));
         AtomicBoolean completed = new AtomicBoolean();
         Runnable timeout = () -> {
             if (completed.compareAndSet(false, true)) callback.complete(null,
@@ -97,6 +98,19 @@ public final class CardConfiguration {
     private static void apply(Context context, Intent intent) {
         String operation = intent.getStringExtra("operation");
         if ("query".equals(operation) || "diagnostics".equals(operation)) return;
+        if ("openLegacyCards".equals(operation)) {
+            long remaining = intent.getLongExtra(FLOAT_SETTINGS_DEADLINE, 0) - SystemClock.elapsedRealtime();
+            if (remaining <= 0 || remaining > 5000) throw new IllegalArgumentException("Card launch expired");
+            PluginRuntime.showLegacy();
+            return;
+        }
+        if ("nativeCards".equals(operation)) {
+            if (!intent.hasExtra("value") || !(intent.getExtras().get("value") instanceof Boolean))
+                throw new IllegalArgumentException("Missing card interface value");
+            if (!NativeCardRouting.isReady()) throw new IllegalStateException("新版卡片唤出尚未连接");
+            put(context, "supercard_native_cards", intent.getBooleanExtra("value", false) ? 1 : 0);
+            return;
+        }
         if ("payUser".equals(operation)) {
             if (!PayUserRouting.ready) throw new IllegalStateException("启动用户功能尚未加载");
             if (!intent.hasExtra("user") || !(intent.getExtras().get("user") instanceof Integer))
@@ -196,6 +210,7 @@ public final class CardConfiguration {
 
     public static Bundle read(Context context) {
         Bundle state = new Bundle();
+        state.putBoolean("nativeCards", Settings.Secure.getInt(context.getContentResolver(), "supercard_native_cards", 0) == 1);
         state.putBoolean("enabled", Settings.Secure.getInt(context.getContentResolver(), "card_service_total_switch", 1) == 1);
         String side = Settings.Secure.getString(context.getContentResolver(), "navigation_gesture_right_side");
         state.putBoolean("unlocked", side == null || side.contains("side_card"));

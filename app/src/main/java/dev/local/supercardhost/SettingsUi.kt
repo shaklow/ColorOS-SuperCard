@@ -56,7 +56,7 @@ abstract class M3eSettingsActivity : Activity() {
         window.decorView.windowInsetsController?.setSystemBarsAppearance(if (dark) 0 else mask, mask)
     }
 
-    private fun unavailable(error: Throwable) {
+    protected fun unavailable(error: Throwable) {
         Log.e("SuperCardSettings", "Private settings UI unavailable", error)
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(48, 48, 48, 48)

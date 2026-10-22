@@ -16,6 +16,9 @@ class SettingsLifecycleTest {
     @Test fun runtimeSettingsCompletesItsFirstLifecycle() = launch(HostToolsActivity::class.java)
     @Test fun campusSettingsCompletesItsFirstLifecycle() = launch(DhuPaySettingsActivity::class.java)
 
+    @Test fun nativeCardsCompletesItsFirstLifecycle() = launch(NativeCardsActivity::class.java)
+    @Test fun lensSettingsCompletesItsFirstLifecycle() = launch(LensSettingsActivity::class.java)
+
     private fun <T : Activity> launch(type: Class<T>) {
         val controller = Robolectric.buildActivity(type).setup()
         assertNotNull(controller.get().window.decorView)

@@ -32,7 +32,7 @@ def main():
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=args.timeout)
         print(result.stdout, end='')
         if result.returncode or not re.search(r'INSTRUMENTATION_CODE:\s*-1\s*$', result.stdout) \
-                or 'Settings startup: 4 entry points passed' not in result.stdout:
+                or 'Settings startup: 5 entry points passed' not in result.stdout:
             raise SystemExit('Settings startup failed; inspect the instrumentation output and device crash log.')
     finally:
         if args.logcat_out:

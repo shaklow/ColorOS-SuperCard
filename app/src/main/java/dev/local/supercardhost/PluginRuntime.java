@@ -78,6 +78,7 @@ public final class PluginRuntime {
                 PluginRuntime::suspendOverlayForAuthentication,
                 () -> { updateState(host); restoreOverlayAfterAuthentication(); });
             type.getMethod("onCreate", Context.class, Context.class).invoke(instance, host, card);
+            NativeCardRouting.install(VectorEntry.current, host, instance);
             CardConfiguration.install(host);
             GestureHandle.install(host, loader, instance);
             updateState(host);
@@ -162,6 +163,11 @@ public final class PluginRuntime {
             lastBouncer = bouncer;
             Log.i(TAG, "ColorOS keyguard state synchronized: locked=" + locked + ", showing=" + showing + ", bouncer=" + bouncer);
         } catch (Throwable error) { failure("state", error); }
+    }
+
+    static void showLegacy() {
+        if (plugin == null) throw new IllegalStateException("卡包服务尚未连接");
+        NativeCardRouting.showLegacy(PluginRuntime::show);
     }
 
     public static void show() {
