@@ -1,6 +1,5 @@
 package dev.local.supercardhost
 
-import android.app.Application
 import android.content.Intent
 import org.junit.Assert.*
 import org.junit.Test
@@ -13,7 +12,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [31, 36])
 class LensCameraIntentTest {
     @Test fun everyModeKeepsItsNativeExtrasWithoutClearingMainCameraTask() {
-        val context = RuntimeEnvironment.getApplication<Application>()
+        val context = RuntimeEnvironment.getApplication()
         for (mode in ColorOsLensModes.query(context)) {
             val intent = ColorOsLensModes.embeddedIntent(context, mode.type())
             assertEquals("com.oplus.camera/com.oplus.camera.Camera", intent.component!!.flattenToString())

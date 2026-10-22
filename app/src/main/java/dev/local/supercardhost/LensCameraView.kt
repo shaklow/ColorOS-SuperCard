@@ -51,19 +51,30 @@ internal class LensCameraView(context: Context, private val type: String, back: 
                     // existing buffer during layout changes; touch uses the same transform.
                     surface.setDefaultBufferSize(width, height)
                     output = Surface(surface)
-                    session = LensCameraSession(LensDisplayBackend(context)).also {
-                        it.start(output!!, width, height, resources.displayMetrics.densityDpi,
-                            ColorOsLensModes.embeddedIntent(context, type))
-                    }
                     PluginRuntime.setLensSecure(true)
+                    RootDisplayClient.requestBackend()
                     main.postDelayed(timeout, 10_000)
+                    val start = object : Runnable {
+                        override fun run() {
+                            if (closed) return
+                            if (!RootDisplayClient.isReady()) { main.postDelayed(this, 200); return }
+                            try {
+                                session = LensCameraSession(LensDisplayBackend(context)).also {
+                                    it.start(output!!, width, height, resources.displayMetrics.densityDpi,
+                                        ColorOsLensModes.embeddedIntent(context, type))
+                                }
+                            } catch (error: Exception) { fail(error) }
+                            catch (error: LinkageError) { fail(error) }
+                        }
+                    }
+                    start.run()
                 } catch (error: Exception) { fail(error) }
                 catch (error: LinkageError) { fail(error) }
             }
             override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) = Unit
             override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean { close(); return true }
             override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
-                if (!closed) { frames = true; status.visibility = View.GONE; main.removeCallbacks(timeout) }
+                if (!closed && session != null) { frames = true; status.visibility = View.GONE; main.removeCallbacks(timeout) }
             }
         }
         texture.setOnTouchListener { view, event ->
