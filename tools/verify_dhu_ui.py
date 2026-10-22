@@ -20,7 +20,11 @@ def verify_archive(host_apk):
             raise ValueError('M3E archive needs an explicit native library loader')
         dex = b''.join(ui.read(n) for n in names if n.startswith('classes') and n.endswith('.dex'))
         for descriptor in [b'Ldev/local/supercardui/DhuCardSurface;',
+                           b'Ldev/local/supercardui/SettingsSurface;',
                            b'Lcom/google/android/material/button/MaterialButton;',
+                           b'Lcom/google/android/material/appbar/MaterialToolbar;',
+                           b'Lcom/google/android/material/materialswitch/MaterialSwitch;',
+                           b'Lcom/google/android/material/textfield/TextInputLayout;',
                            b'Lcom/google/android/material/loadingindicator/LoadingIndicator;',
                            b'Lcom/google/android/material/progressindicator/LinearProgressIndicator;']:
             if descriptor not in dex:

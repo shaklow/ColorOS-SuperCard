@@ -19,6 +19,7 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import dalvik.system.DelegateLastClassLoader;
 import java.io.File;
+import java.util.function.IntConsumer;
 
 /** Private MDC archive: never flatten its resources or AndroidX classes into the OEM graph. */
 final class DhuMaterialUi {
@@ -91,6 +92,25 @@ final class DhuMaterialUi {
 
     static View expanded(Context host) throws Exception { return createView(host, "createExpanded"); }
 
+    static View settings(Context host, String page) throws Exception {
+        Context context = archiveContext(host);
+        return (View) factory.getMethod("createSettings", Context.class, String.class).invoke(null, context, page);
+    }
+
+    static void renderSettings(View root, android.os.Bundle values) throws Exception {
+        factory.getMethod("renderSettings", View.class, android.os.Bundle.class).invoke(null, root, values);
+    }
+
+    static void chooseSettings(View root, String title, String[] labels, int selected, IntConsumer action) throws Exception {
+        factory.getMethod("chooseSettings", View.class, String.class, String[].class, int.class, IntConsumer.class)
+                .invoke(null, root, title, labels, selected, action);
+    }
+
+    static void confirmSettings(View root, String title, String message, Runnable action) throws Exception {
+        factory.getMethod("confirmSettings", View.class, String.class, String.class, Runnable.class)
+                .invoke(null, root, title, message, action);
+    }
+
     static <T extends View> T required(View root, String name, Class<T> type) {
         View result = root.findViewWithTag("dhu_" + name);
         if (!type.isInstance(result)) throw new IllegalStateException("Missing M3E UI binding: " + name);
@@ -98,6 +118,11 @@ final class DhuMaterialUi {
     }
 
     private static synchronized View createView(Context host, String method) throws Exception {
+        Context context = archiveContext(host);
+        return (View) factory.getMethod(method, Context.class).invoke(null, context);
+    }
+
+    private static synchronized Context archiveContext(Context host) throws Exception {
         if (factory == null) {
             Context module = host.createPackageContext("dev.local.supercardhost", Context.CONTEXT_IGNORE_SECURITY);
             File directory = new File(host.getCodeCacheDir(), "dhu_material_ui");
@@ -116,8 +141,7 @@ final class DhuMaterialUi {
         Resources source = host.getPackageManager().getResourcesForApplication(info.applicationInfo);
         Resources resources = new Resources(source.getAssets(), host.getResources().getDisplayMetrics(),
                 host.getResources().getConfiguration());
-        Context context = new ArchiveContext(host, resources, loader);
-        return (View) factory.getMethod(method, Context.class).invoke(null, context);
+        return new ArchiveContext(host, resources, loader);
     }
 
     private static final class ArchiveContext extends ContextWrapper {

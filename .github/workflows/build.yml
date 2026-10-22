@@ -75,6 +75,7 @@ jobs:
             dist/resource-verification.json
             dist/apk-fingerprint.json
             dist/comparison.json
+            app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           if-no-files-found: error
           retention-days: 14
       - name: 保存失败的依赖校验与产物比较报告
@@ -84,6 +85,8 @@ jobs:
           name: build-diagnostics
           path: |
             build/reports/dependency-verification/
+            app/build/test-results/
+            dhu-ui/build/test-results/
             dist/comparison.json
             dist/apk-fingerprint.json
           if-no-files-found: ignore
@@ -135,11 +138,65 @@ jobs:
             dist/apk-fingerprint.json
           if-no-files-found: error
           retention-days: 7
+      - name: 上传设备启动测试 APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: settings-startup-pr-instrumentation
+          path: app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          if-no-files-found: error
+          retention-days: 7
       - name: 保存失败诊断
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pr-build-diagnostics
-          path: build/reports/dependency-verification/
+          path: |
+            build/reports/dependency-verification/
+            app/build/test-results/
+            dhu-ui/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  settings-startup:
+    name: Android 36 设置启动回归
+    needs: [build, pull-request]
+    if: always() && (needs.build.result == 'success' || needs.pull-request.result == 'success')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: 下载统一 APK 与测试 APK
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ github.event_name == 'pull_request' && 'supercard-pr-test' || 'supercard-unified' }}
+          path: smoke
+      - name: 下载 PR 设备测试 APK
+        if: github.event_name == 'pull_request'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: settings-startup-pr-instrumentation
+          path: smoke/instrumentation
+      - name: 启用 KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: 安装并启动真实设置页面
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7_pro
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: python tools/test_settings_startup.py --install-from smoke --logcat-out smoke/logcat.txt
+      - name: 保存设备启动日志
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: settings-startup-log
+          path: smoke/logcat.txt
           if-no-files-found: ignore
           retention-days: 7
