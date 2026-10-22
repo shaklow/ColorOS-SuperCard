@@ -20,6 +20,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Floating lens binding tests failed' }
     python tools/test_pay_chrome_abi.py
     if ($LASTEXITCODE -ne 0) { throw 'PAY appearance ABI check failed' }
+    python tools/test_root_display.py
+    if ($LASTEXITCODE -ne 0) { throw 'Root display connection tests failed' }
     python tools/test_pay_startup.py
     if ($LASTEXITCODE -ne 0) { throw 'PAY 启动退避离线测试失败' }
     python tools/rebuild_assets.py
