@@ -154,8 +154,6 @@ public final class LensRuntimeBridge {
             catch (Exception | LinkageError error) {
                 Log.w(TAG, "Floating M3E surface unavailable; keeping original Lens UI", error);
             }
-            Class<?> compose = loader.loadClass("androidx.compose.foundation.lazy.LazyDslKt");
-            Log.i(TAG, "Original Lens Compose loader=" + compose.getClassLoader());
             INSTALLED.add(loader);
             Log.i(TAG, "Original Lens capability and launch bridge installed");
         } catch (Throwable error) { Log.e(TAG, "Cannot install Lens adapter", error); }

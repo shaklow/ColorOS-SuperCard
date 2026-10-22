@@ -114,4 +114,4 @@ Actions 产物包含统一 APK、SHA256 和核对报告，不再构建或上传 
 
 0.2.20 修复 LENS 选择模式后外跳的问题，加入卡片内相机显示、触摸与退出清理。实现及验证边界见 [卡片内相机](docs/lens-embedded-camera.md)。
 
-0.2.21 将 PAY 的启动会话与触摸策略拆为独立 Kotlin 组件，任务观察使用一致的会话快照。界面与支付入口保持原样，详见 [桥接职责](docs/pay-bridge-structure.md)。
+0.2.21 将 PAY 的启动会话、任务观察、显示访问与触摸策略拆为独立 Kotlin 组件，任务观察使用一致的会话快照。界面与支付入口保持原样，详见 [桥接职责](docs/pay-bridge-structure.md)。

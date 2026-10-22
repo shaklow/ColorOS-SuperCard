@@ -20,7 +20,7 @@ public final class TestPayChromeAbi {
             for (var entry : Collections.list(zip.entries())) {
                 if (!entry.getName().matches("classes[0-9]*\\.dex")) continue;
                 var dex = DexBackedDexFile.fromInputStream(Opcodes.forApi(36), new BufferedInputStream(zip.getInputStream(entry)));
-                for (ClassDef type : dex.getClasses()) if ((Set.of(CARD, ADAPTER, HOLDER).contains(type.getType()) || type.getType().equals("Lcom/vivo/card/cards/cardcamera/handler/CameraCardEventHandler;") || type.getType().equals("Lcom/vivo/card/cards/base/view/BaseCardView;") || type.getType().equals("Lcom/vivo/card/model/CardSetBean$CardBean$FunctionBean;"))) {
+                for (ClassDef type : dex.getClasses()) if ((Set.of(CARD, ADAPTER, HOLDER, "Lcom/vivo/card/framework/virtual/VirtualViewManager;", "Lcom/vivo/card/cards/cardpay/virtual/PayVirtualViewManager;").contains(type.getType()) || type.getType().equals("Lcom/vivo/card/cards/cardcamera/handler/CameraCardEventHandler;") || type.getType().equals("Lcom/vivo/card/cards/base/view/BaseCardView;") || type.getType().equals("Lcom/vivo/card/model/CardSetBean$CardBean$FunctionBean;"))) {
                     if (classes.put(type.getType(), type) != null) throw new AssertionError("Duplicate PAY class");
                 }
             }
@@ -56,6 +56,14 @@ public final class TestPayChromeAbi {
             }
             requireMethod(base, "notifyCardForegroundState", "(Z)V"); checks++;
             requireMethod(base, "onOuterPageScrollStateChanged", "(ILjava/lang/String;)V"); checks++;
+            ClassDef virtual = classes.get("Lcom/vivo/card/framework/virtual/VirtualViewManager;");
+            requireMethod(virtual, "isVirtualDisplayActive", "()Z"); checks++;
+            requireMethod(virtual, "getVirtualDisplayId", "()I"); checks++;
+            requireMethod(virtual, "getTaskId", "()I"); checks++;
+            requireMethod(virtual, "setTaskId", "(I)V"); checks++;
+            requireMethod(virtual, "handleActivityResumed", "(Landroid/content/ComponentName;)V"); checks++;
+            requireMethod(classes.get("Lcom/vivo/card/cards/cardpay/virtual/PayVirtualViewManager;"), "release", "()V"); checks++;
+            requireMethod(classes.get("Lcom/vivo/card/cards/cardpay/virtual/PayVirtualViewManager;"), "launchPayment", "(Ljava/lang/String;[ILandroid/content/Intent;)V"); checks++;
             System.out.println("Floating card ABI: " + checks + " real bundled entries verified.");
         }
     }

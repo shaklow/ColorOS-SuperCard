@@ -174,6 +174,7 @@ public final class SettingsStartupTest extends Instrumentation {
         AtomicReference<Surface> output = new AtomicReference<>();
         AtomicReference<VirtualDisplay> display = new AtomicReference<>();
         AtomicInteger clicks = new AtomicInteger();
+        CountDownLatch clicked = new CountDownLatch(1);
         Activity activity = null;
         ActivityMonitor monitor = addMonitor(target.getPackageName() + ".HostActivity", null, false);
         getUiAutomation().adoptShellPermissionIdentity();
@@ -210,13 +211,13 @@ public final class SettingsStartupTest extends Instrumentation {
             AtomicReference<View> control = new AtomicReference<>();
             main(() -> {
                 Runnable ready = () -> {
-                    View button = current.getWindow().getDecorView().findViewWithTag("show_cards");
+                    View button = current.getWindow().getDecorView().findViewWithTag("settings_show_cards");
                     if (button != null && button.getWidth() > 0 && button.getHeight() > 0 && current.hasWindowFocus()) {
                         control.set(button); laidOut.countDown();
                     }
                 };
-                // ActivityMonitor can return before content installation and the first
-                // traversal. Observe the decor, not a child that may not exist yet.
+                // Wait for a laid-out control in the visible secondary window, rather
+                // than assuming the first traversal has finished after launch.
                 current.getWindow().getDecorView().getViewTreeObserver().addOnGlobalLayoutListener(ready::run);
                 current.getWindow().getDecorView().getViewTreeObserver()
                         .addOnWindowFocusChangeListener(focused -> ready.run());
@@ -227,7 +228,7 @@ public final class SettingsStartupTest extends Instrumentation {
             int[] location = new int[2];
             main(() -> {
                 View button = control.get();
-                button.setOnClickListener(v -> clicks.incrementAndGet());
+                button.setOnClickListener(v -> { clicks.incrementAndGet(); clicked.countDown(); });
                 button.getLocationOnScreen(location);
                 location[0] += button.getWidth() / 2; location[1] += button.getHeight() / 2;
             });
@@ -239,8 +240,8 @@ public final class SettingsStartupTest extends Instrumentation {
                 try { if (!Boolean.TRUE.equals(inject.invoke(backend, event, id))) throw new AssertionError("Lens input rejected"); }
                 finally { event.recycle(); }
             }
-            SystemClock.sleep(500); waitForIdleSync();
-            if (clicks.get() != 1) throw new AssertionError("Lens touch did not reach the embedded activity: " + clicks.get());
+            if (!clicked.await(5, TimeUnit.SECONDS) || clicks.get() != 1)
+                throw new AssertionError("Lens touch did not reach the embedded activity: " + clicks.get());
         } finally {
             try {
                 if (activity != null) { Activity current = activity; main(current::finish); }
