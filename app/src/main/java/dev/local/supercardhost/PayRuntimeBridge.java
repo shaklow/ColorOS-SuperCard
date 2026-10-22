@@ -119,9 +119,10 @@ public final class PayRuntimeBridge {
 
     /** Returns only the original manager's current, active virtual display. */
     public static int getWeChatRideDisplayId() {
-        String function = SESSION.getSnapshot().getFunction();
+        PaySessionState.Snapshot session = SESSION.getSnapshot();
+        String function = session.getFunction();
         return "wx_ride".equals(function) || "wx2_ride".equals(function)
-                ? getActiveDisplayId() : -1;
+                ? displayId(session) : -1;
     }
 
     static long getLaunchGeneration() { return SESSION.getSnapshot().getGeneration(); }

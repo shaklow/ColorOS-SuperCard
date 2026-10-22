@@ -18,7 +18,6 @@ import android.hardware.display.VirtualDisplay;
 import android.view.TextureView;
 import android.view.Surface;
 import android.view.MotionEvent;
-import android.view.InputEvent;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
@@ -204,6 +203,7 @@ public final class SettingsStartupTest extends Instrumentation {
             activity = monitor.waitForActivityWithTimeout(10_000);
             if (activity == null || activity.getDisplay().getDisplayId() != id)
                 throw new AssertionError("Lens activity escaped to the main display");
+            waitForIdleSync(); SystemClock.sleep(500); waitForIdleSync();
             Activity current = activity;
             int[] location = new int[2];
             main(() -> {
