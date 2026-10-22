@@ -6,7 +6,7 @@
 
 相机 Intent 保留原 ColorOS action、组件、模式编号和前后摄参数；卡片启动使用 NEW_TASK / MULTIPLE_TASK / EXCLUDE_FROM_RECENTS，去掉桌面快捷方式的 CLEAR_TASK / TASK_ON_HOME。ActivityOptions 必须明确指定正数副屏编号。创建或启动失败在卡片内提示，不降级为主屏相机。
 
-Root 后端新增唯一固定名称 `SuperCard_Lens`，复用原安全、trusted、own-content、destroy-on-removal 显示策略（19917）。仍限定 SystemUI UID、nonce、存活 Binder、正数尺寸及安全 flags，一次仅一个显示，不接受任意显示名称或系统调用。PAY 的显示名称、flags 和安全窗口请求保持原逻辑；相机使用独立的安全窗口请求，避免 PAY 观察器清除相机窗口保护。
+Root 后端新增唯一固定名称 `SuperCard_Lens`，复用原安全、trusted、own-content、destroy-on-removal 显示策略（19917）。仍限定 SystemUI UID、nonce、存活 Binder、正数尺寸及安全 flags，每个固定名称各最多一个显示，不接受任意显示名称或系统调用。原 PAY 切卡时保留显示，相机使用独立槽位；关闭相机不会释放 PAY 显示。PAY 的显示名称、flags 和安全窗口请求保持原逻辑；相机使用独立的安全窗口请求，避免 PAY 观察器清除相机窗口保护。
 
 触摸复制 MotionEvent 后按显示缓冲区与当前 TextureView 尺寸缩放，保留多指与历史数据，只注入本会话的正数显示编号。结束未完成的手势先发 CANCEL，再释放显示。返回、收起、切卡、后台通知、纹理销毁和卸载均关闭会话。destroy-on-removal 防止显示删除后任务落到主屏。
 
