@@ -106,11 +106,58 @@ public final class SettingsStartupTest extends Instrumentation {
             });
             if (modesClicked.get() != 6 || settingsClicked.get() != 1 || dashboard.getHits() != 0)
                 throw new AssertionError("Floating controls should work in the same window without opening a dashboard");
+            main(() -> checkPayAppearance(owner.get(), target.getClassLoader()));
+            if (dashboard.getHits() != 0) throw new AssertionError("PAY styling must not launch a dashboard");
         } finally {
             try {
                 main(() -> { if (owner.get() != null && owner.get().isAttachedToWindow()) manager.get().removeViewImmediate(owner.get()); });
             } finally { removeMonitor(dashboard); shell("appops set " + pkg + " SYSTEM_ALERT_WINDOW " + previous); }
         }
+    }
+
+    private void checkPayAppearance(FrameLayout card, ClassLoader hostLoader) throws Exception {
+        Context context = card.getContext();
+        FrameLayout panel = new FrameLayout(context);
+        android.widget.ImageView frame = new android.widget.ImageView(context);
+        android.widget.ImageView logo = new android.widget.ImageView(context);
+        android.widget.ImageView settings = new android.widget.ImageView(context);
+        android.widget.TextView hint = new android.widget.TextView(context);
+        FrameLayout displayOwner = new FrameLayout(context); // Ownership fixture; not a real payment display.
+        panel.addView(frame, new FrameLayout.LayoutParams(-1, -1));
+        panel.addView(logo); panel.addView(settings); panel.addView(hint);
+        FrameLayout.LayoutParams displayParams = new FrameLayout.LayoutParams(160, 240);
+        panel.addView(displayOwner, displayParams);
+        AtomicInteger clicks = new AtomicInteger();
+        settings.setOnClickListener(view -> clicks.incrementAndGet());
+        card.removeAllViews(); card.addView(panel, new FrameLayout.LayoutParams(-1, -1));
+        Class<?> bridge = hostLoader.loadClass("dev.local.supercardhost.DhuMaterialUi");
+        Method style = bridge.getDeclaredMethod("stylePay", Context.class, String.class, View[].class);
+        style.setAccessible(true);
+        style.invoke(null, context, "card", new View[]{frame, logo, settings, hint});
+        panel.measure(View.MeasureSpec.makeMeasureSpec(card.getWidth(), View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(card.getHeight(), View.MeasureSpec.EXACTLY));
+        panel.layout(0, 0, panel.getMeasuredWidth(), panel.getMeasuredHeight());
+        if (!frame.getBackground().getClass().getClassLoader().getClass().getName()
+                .equals("dalvik.system.DelegateLastClassLoader"))
+            throw new AssertionError("PAY appearance escaped the private UI loader");
+        float density = context.getResources().getDisplayMetrics().density;
+        if (settings.getWidth() < 48 * density || settings.getHeight() < 48 * density)
+            throw new AssertionError("PAY settings touch target is too small");
+        settings.performClick();
+        if (clicks.get() != 1 || settings.getParent() != panel || displayOwner.getParent() != panel
+                || displayOwner.getLayoutParams() != displayParams || panel.getChildCount() != 5)
+            throw new AssertionError("PAY styling changed ownership, geometry or callbacks");
+        FrameLayout tile = new FrameLayout(context);
+        android.widget.ImageView selection = new android.widget.ImageView(context), icon = new android.widget.ImageView(context);
+        android.widget.TextView label = new android.widget.TextView(context); label.setText("微信付款码");
+        FrameLayout.LayoutParams tileParams = new FrameLayout.LayoutParams(76, 60);
+        tile.addView(selection, tileParams); tile.addView(icon); tile.addView(label);
+        tile.setOnClickListener(view -> clicks.incrementAndGet());
+        style.invoke(null, context, "function", new View[]{tile, selection, icon, label});
+        tile.performClick();
+        if (selection.getLayoutParams() != tileParams || clicks.get() != 2 || tile.getChildCount() != 3
+                || !"微信付款码".contentEquals(label.getText()))
+            throw new AssertionError("PAY shortcut styling replaced original controls");
     }
 
     private void checkCampusBounds(Context privateAppearance) throws Exception {
