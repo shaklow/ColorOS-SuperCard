@@ -86,7 +86,6 @@ object SettingsSurface {
                 "home" -> home()
                 "runtime" -> runtime()
                 "campus" -> campus()
-                "lens" -> lens()
                 else -> error("Unknown settings page")
             }
         }
@@ -114,14 +113,12 @@ object SettingsSurface {
             hero.addView(icon(R.drawable.settings_ic_cards, 44, tonal = true))
             hero.addView(text("卡片与功能", 24, strong = true).space(top = 16))
             hero.addView(text("启用卡片，调整显示顺序", 14, secondary = true).space(top = 6))
-            hero.addView(button("管理卡片", "open_cards").space(top = 18))
+            hero.addView(button("唤出悬浮卡片", "show_cards").space(top = 18))
+            hero.addView(button("管理卡片", "open_cards", textOnly = true).space(top = 6))
             add(card(hero, com.google.android.material.R.attr.colorPrimaryContainer), bottom = 28)
             section("连接与授权")
             navigation("运行状态与 PAY", "检查系统连接、启动用户与触摸设置", R.drawable.settings_ic_status, "open_runtime")
             navigation("东华校园卡", "管理付款码授权链接", R.drawable.dhu_ic_school, "open_campus", "campus_summary")
-            navigation("新版卡片", "校园卡与相机快捷方式", R.drawable.settings_ic_cards, "open_native")
-            toggleGroup("卡片界面", listOf("native_cards" to "解锁后手势打开新版卡片"))
-            add(text("关闭时使用原卡包；锁屏仍沿用原卡包。", 12, secondary = true), top = 8)
             section("使用偏好", top = 24)
             navigation("手势与唤出", "调整唤出区域与操作方式", R.drawable.settings_ic_gesture, "open_gestures")
         }
@@ -165,14 +162,6 @@ object SettingsSurface {
             toggleGroup("微信", listOf("wx_scan" to "扫一扫", "wx_pay" to "付款码", "wx_ride" to "乘车码"))
             toggleGroup("支付宝", listOf("alipay_scan" to "扫一扫", "alipay_pay" to "付款码", "alipay_ride" to "乘车码", "alipay_health_code" to "医保码"))
             toggleGroup("微信分身专用", listOf("wx2_scan" to "扫一扫", "wx2_pay" to "付款码"))
-        }
-
-        private fun lens() {
-            title("相机快捷方式", "选择在 LENS 卡片上显示的拍摄模式")
-            toggleGroup("拍摄模式", listOf(
-                "take_photo" to "拍照", "portrait" to "人像", "video" to "录像", "night_view" to "夜景",
-                "master" to "大师模式", "mirror" to "镜子", "panoramic" to "全景", "high_piexl" to "高像素",
-                "mini_distance" to "微距", "star_sky" to "星空", "document_correction" to "文档矫正"))
         }
 
         private fun campus() {

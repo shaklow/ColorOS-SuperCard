@@ -185,7 +185,7 @@ def manifest(out: Path, version: int, version_name: str) -> None:
                for node in host.findall('uses-permission')):
         host.insert(1, ET.Element('uses-permission', {A + 'name': 'android.permission.QUERY_ALL_PACKAGES'}))
     launcher = next(node for node in app.findall('activity')
-                    if node.get(A + 'name') == 'dev.local.supercardhost.NativeCardsActivity')
+                    if node.get(A + 'name') == 'dev.local.supercardhost.HostActivity')
     for activity in app.findall('activity'):
         for entry in list(activity.findall('intent-filter')):
             if any(category.get(A + 'name') == 'android.intent.category.LAUNCHER'

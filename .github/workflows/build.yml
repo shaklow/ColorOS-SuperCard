@@ -164,7 +164,7 @@ jobs:
           retention-days: 7
 
   settings-startup:
-    name: Android 36 设置启动回归
+    name: Android 36 浮层与设置回归
     needs: [build, pull-request]
     if: always() && (needs.build.result == 'success' || needs.pull-request.result == 'success')
     runs-on: ubuntu-24.04
@@ -188,7 +188,7 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: 安装并启动真实设置页面
+      - name: 安装并验证浮层与设置页面
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
         with:
           api-level: 36

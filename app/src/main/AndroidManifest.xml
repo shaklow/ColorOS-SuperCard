@@ -46,11 +46,10 @@
         <activity android:name=".MemoryPhotoActivity" android:exported="true"
             android:permission="android.permission.DUMP"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
-        <activity android:name=".LensSettingsActivity" android:exported="false" />
-        <activity android:name=".NativeCardsActivity" android:exported="true">
-            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
-        </activity>
+        <activity android:name=".NativeCardsActivity" android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" />
         <activity android:name=".HostActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />

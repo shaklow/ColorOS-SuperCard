@@ -3,17 +3,26 @@ package dev.local.supercardhost
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.os.Bundle
+import android.view.View
 import android.widget.Toast
-import android.widget.CompoundButton
 
-/** LSPosed settings entry and the card toolbar destination. */
+/** Desktop and LSPosed manage settings; gestures continue to use the original floating window. */
 class HostActivity : M3eSettingsActivity() {
-    private var queryGeneration = 0
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         title = "超级卡包"
         if (!showPage("home")) return
-        ui.on("open_native") { open("$packageName.NativeCardsActivity") }
+        ui.on("show_cards") {
+            val button = ui.view<View>("show_cards")
+            button.isEnabled = false
+            CardConfiguration.request(this, "openLegacyCards", null) { _, error ->
+                if (alive()) {
+                    button.isEnabled = true
+                    if (error == null) finish()
+                    else Toast.makeText(this, error, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
         ui.on("open_cards") { open("com.vivo.card.setting.CardSettingActivity") }
         ui.on("open_runtime") { open("$packageName.HostToolsActivity") }
         ui.on("open_campus") { open("$packageName.DhuPaySettingsActivity") }
@@ -23,33 +32,6 @@ class HostActivity : M3eSettingsActivity() {
     override fun onResume() {
         super.onResume()
         if (!isUiReady()) return
-        onResumeSettings()
-    }
-
-    private fun onResumeSettings() {
-        val expected = ++queryGeneration
-        val nativeSwitch = ui.view<CompoundButton>("toggle_native_cards")
-        nativeSwitch.setOnCheckedChangeListener(null)
-        nativeSwitch.isEnabled = false
-        CardConfiguration.request(this, "query", null) { result, error ->
-            if (!alive() || expected != queryGeneration) return@request
-            nativeSwitch.setOnCheckedChangeListener(null)
-            nativeSwitch.isChecked = error == null && result?.getBoolean("nativeCards", false) == true
-            nativeSwitch.isEnabled = error == null && result?.getBoolean("nativeCardsReady", false) == true
-            nativeSwitch.setOnCheckedChangeListener { _, checked ->
-                nativeSwitch.isEnabled = false
-                CardConfiguration.request(this, "nativeCards", Bundle().apply { putBoolean("value", checked) }) { saved, failure ->
-                    if (alive() && expected == queryGeneration) {
-                        nativeSwitch.setOnCheckedChangeListener(null)
-                        nativeSwitch.isChecked = saved?.getBoolean("nativeCards", false) == true
-                        nativeSwitch.isEnabled = true
-                        if (failure != null) Toast.makeText(this, failure, Toast.LENGTH_SHORT).show()
-                        // Rebind after the confirmed readback, including a failed save.
-                        onResumeSettings()
-                    }
-                }
-            }
-        }
         val status = try { contentResolver.call(DhuPayProvider.URI, "status", null, null) }
         catch (_: RuntimeException) { null }
         ui.render("campus_summary" to when {
@@ -58,8 +40,6 @@ class HostActivity : M3eSettingsActivity() {
             else -> "添加付款码授权链接"
         })
     }
-
-    override fun onPause() { queryGeneration++; super.onPause() }
 
     private fun open(component: String) {
         try { startActivity(Intent().setClassName(packageName, component)) }

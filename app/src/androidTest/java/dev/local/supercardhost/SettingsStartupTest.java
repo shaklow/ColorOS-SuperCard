@@ -1,28 +1,38 @@
 package dev.local.supercardhost;
 
 import android.app.Activity;
+import android.app.AppOpsManager;
 import android.app.Instrumentation;
+import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
+import android.graphics.PixelFormat;
+import android.hardware.display.DisplayManager;
 import android.os.Bundle;
+import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
+import android.view.Gravity;
 import android.view.View;
+import android.view.WindowManager;
+import android.widget.FrameLayout;
+import java.io.FileInputStream;
+import java.lang.reflect.Method;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-/** Run against the installed unified APK, including its real private DEX/resources. */
+/** Installed unified APK: settings startup and private M3E content in a non-Activity window. */
 public final class SettingsStartupTest extends Instrumentation {
     @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); start(); }
 
     @Override public void onStart() {
         Bundle result = new Bundle();
-        int checked = 0;
         try {
-            checkPage("NativeCardsActivity", "settings", Intent.CATEGORY_LAUNCHER); checked++;
-            checkPage("HostActivity", "open_runtime", "de.robv.android.xposed.category.MODULE_SETTINGS"); checked++;
-            checkPage("HostToolsActivity", "toggle_wx_scan", null); checked++;
-            checkPage("DhuPaySettingsActivity", "url", null); checked++;
-            checkPage("LensSettingsActivity", "toggle_take_photo", null); checked++;
-            checkNativeNavigation();
-            result.putString("stream", "Settings startup: " + checked + " entry points passed\n");
+            checkPage("HostActivity", "show_cards", Intent.CATEGORY_LAUNCHER);
+            checkPage("HostActivity", "open_runtime", "de.robv.android.xposed.category.MODULE_SETTINGS");
+            checkPage("HostToolsActivity", "toggle_wx_scan", null);
+            checkPage("DhuPaySettingsActivity", "url", null);
+            checkFloatingWindow();
+            result.putString("stream", "Settings startup: 4 entry points passed\nFloating cards: window embedding passed\n");
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
             result.putString("stream", android.util.Log.getStackTraceString(error));
@@ -30,72 +40,94 @@ public final class SettingsStartupTest extends Instrumentation {
         }
     }
 
-    private void checkNativeNavigation() throws Exception {
-        String pkg = getTargetContext().getPackageName();
-        Activity cards = startActivitySync(new Intent().setClassName(pkg, pkg + ".NativeCardsActivity")
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-        android.content.SharedPreferences preferences = getTargetContext().getSharedPreferences("native_cards", 0);
-        boolean existed = preferences.contains("lens");
-        java.util.Set<String> before = preferences.getStringSet("lens", java.util.Set.of());
+    private void checkFloatingWindow() throws Exception {
+        Context target = getTargetContext();
+        String pkg = target.getPackageName();
+        AppOpsManager appOps = target.getSystemService(AppOpsManager.class);
+        int before = appOps.unsafeCheckOpRawNoThrow(AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW,
+                target.getApplicationInfo().uid, pkg);
+        String previous = switch (before) {
+            case AppOpsManager.MODE_ALLOWED -> "allow";
+            case AppOpsManager.MODE_IGNORED -> "ignore";
+            case AppOpsManager.MODE_ERRORED -> "deny";
+            case AppOpsManager.MODE_FOREGROUND -> "foreground";
+            case AppOpsManager.MODE_DEFAULT -> "default";
+            default -> throw new AssertionError("Unexpected overlay app-op: " + before);
+        };
+        ActivityMonitor dashboard = addMonitor(pkg + ".NativeCardsActivity", null, false);
+        AtomicReference<FrameLayout> owner = new AtomicReference<>();
+        AtomicReference<WindowManager> manager = new AtomicReference<>();
+        AtomicInteger modesClicked = new AtomicInteger(), settingsClicked = new AtomicInteger();
         try {
+            shell("appops set " + pkg + " SYSTEM_ALERT_WINDOW allow");
+            main(() -> {
+                Context window = target.createDisplayContext(target.getSystemService(DisplayManager.class).getDisplay(0))
+                        .createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null);
+                WindowManager wm = window.getSystemService(WindowManager.class); manager.set(wm);
+                FrameLayout card = new FrameLayout(window); owner.set(card);
+                Class<?> bridge = target.getClassLoader().loadClass(pkg + ".DhuMaterialUi");
+                Method create = bridge.getDeclaredMethod("lens", Context.class); create.setAccessible(true);
+                Method render = bridge.getDeclaredMethod("renderLens", View.class, Bundle.class); render.setAccessible(true);
+                View surface = (View) create.invoke(null, window);
+                Bundle modes = new Bundle();
+                String[] types = {"take_photo", "portrait", "video", "night_view", "master", "high_piexl"};
+                modes.putStringArray("types", types);
+                modes.putStringArray("titles", new String[]{"拍照", "人像", "录像", "夜景", "大师模式", "高像素"});
+                render.invoke(null, surface, modes);
+                for (String type : types) surface.findViewWithTag("lens_mode_" + type)
+                        .setOnClickListener(v -> modesClicked.incrementAndGet());
+                surface.findViewWithTag("lens_settings").setOnClickListener(v -> settingsClicked.incrementAndGet());
+                card.addView(surface, new FrameLayout.LayoutParams(-1, -1));
+                float density = window.getResources().getDisplayMetrics().density;
+                WindowManager.LayoutParams attributes = new WindowManager.LayoutParams(Math.round(280 * density), Math.round(450 * density),
+                        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT);
+                attributes.gravity = Gravity.CENTER; attributes.setTitle("SuperCard floating UI test");
+                wm.addView(card, attributes);
+                checkCampusBounds(surface.getContext());
+            });
             waitForIdleSync(); SystemClock.sleep(1000); waitForIdleSync();
-            runOnMainSync(() -> {
-                if ((cards.getWindow().getAttributes().flags & android.view.WindowManager.LayoutParams.FLAG_SECURE) == 0)
-                    throw new AssertionError("Campus window must be secure before rendering");
-                if (cards.getWindow().getDecorView().findViewWithTag("dhu_settings") == null)
-                    throw new AssertionError("Real campus surface missing");
-                // Also measure the small OEM card's exact bounds using Android's actual
-                // large-font metrics, separately from the Activity's larger card slot.
-                android.content.res.Configuration config = new android.content.res.Configuration(cards.getResources().getConfiguration());
-                config.fontScale = 1.3f;
-                try {
-                    android.content.Context appearance = cards.getWindow().getDecorView().findViewWithTag("dhu_settings")
-                            .getContext().createConfigurationContext(config);
-                    Class<?> factory = appearance.getClassLoader().loadClass("dev.local.supercardui.DhuCardSurface");
-                    View surface = (View) factory.getMethod("create", android.content.Context.class).invoke(null, appearance);
-                    float density = cards.getResources().getDisplayMetrics().density;
-                    surface.measure(View.MeasureSpec.makeMeasureSpec(Math.round(280 * density), View.MeasureSpec.EXACTLY),
-                            View.MeasureSpec.makeMeasureSpec(Math.round(450 * density), View.MeasureSpec.EXACTLY));
-                    surface.layout(0, 0, surface.getMeasuredWidth(), surface.getMeasuredHeight());
-                    View qr = surface.findViewWithTag("dhu_qr"), barcode = surface.findViewWithTag("dhu_barcode");
-                    if (qr.getHeight() < 128 * density || barcode.getWidth() < 200 * density)
-                        throw new AssertionError("Large-font scan area too small on Android: QR=" + qr.getHeight() / density);
-                } catch (ReflectiveOperationException error) { throw new AssertionError("Large-font surface failed", error); }
-
+            main(() -> {
+                FrameLayout card = owner.get();
+                if (!card.isAttachedToWindow() || card.getWidth() <= 0)
+                    throw new AssertionError("Floating card was not attached to WindowManager");
+                View surface = card.getChildAt(0), gear = surface.findViewWithTag("lens_settings");
+                if (!surface.getContext().getClassLoader().loadClass("dev.local.supercardui.LensCardSurface")
+                        .getClassLoader().getClass().getName().equals("dalvik.system.DelegateLastClassLoader"))
+                    throw new AssertionError("Floating UI did not use the isolated M3E archive");
+                if (gear == null || gear.getWidth() <= 0 || !gear.isAttachedToWindow())
+                    throw new AssertionError("Floating card settings icon missing");
+                gear.performClick();
+                for (String type : new String[]{"take_photo", "portrait", "video", "night_view", "master", "high_piexl"}) {
+                    View button = surface.findViewWithTag("lens_mode_" + type);
+                    if (button == null || button.getWidth() <= 0) throw new AssertionError("Floating mode missing: " + type);
+                    button.performClick();
+                }
             });
-            ActivityMonitor settingsMonitor = addMonitor(pkg + ".HostActivity", null, false);
-            runOnMainSync(() -> cards.getWindow().getDecorView().findViewWithTag("native_settings").performClick());
-            Activity settings = waitForMonitorWithTimeout(settingsMonitor, 5000);
-            removeMonitor(settingsMonitor);
-            if (settings == null) throw new AssertionError("Card settings icon not connected");
-            runOnMainSync(settings::finish); waitForIdleSync();
-            ActivityMonitor lensMonitor = addMonitor(pkg + ".LensSettingsActivity", null, false);
-            runOnMainSync(() -> cards.getWindow().getDecorView().findViewWithTag("native_lens_settings").performClick());
-            Activity lens = waitForMonitorWithTimeout(lensMonitor, 5000);
-            removeMonitor(lensMonitor);
-            if (lens == null) throw new AssertionError("LENS settings icon not connected");
-            waitForIdleSync();
-            java.util.concurrent.atomic.AtomicBoolean selected = new java.util.concurrent.atomic.AtomicBoolean();
-            runOnMainSync(() -> {
-                android.widget.CompoundButton toggle = lens.getWindow().getDecorView().findViewWithTag("settings_toggle_take_photo");
-                toggle.performClick(); selected.set(toggle.isChecked());
-            });
-            if (preferences.getStringSet("lens", java.util.Set.of()).contains("take_photo") != selected.get())
-                throw new AssertionError("LENS selection not persisted");
-            runOnMainSync(lens::finish); waitForIdleSync();
-            runOnMainSync(() -> {
-                boolean visible = cards.getWindow().getDecorView().findViewWithTag("native_lens_take_photo") != null;
-                if (visible != selected.get()) throw new AssertionError("LENS selection not rendered after return");
-            });
+            if (modesClicked.get() != 6 || settingsClicked.get() != 1 || dashboard.getHits() != 0)
+                throw new AssertionError("Floating controls should work in the same window without opening a dashboard");
         } finally {
-            android.content.SharedPreferences.Editor editor = preferences.edit();
-            if (existed) editor.putStringSet("lens", before); else editor.remove("lens");
-            editor.commit();
-            runOnMainSync(cards::finish); waitForIdleSync();
+            try {
+                main(() -> { if (owner.get() != null && owner.get().isAttachedToWindow()) manager.get().removeViewImmediate(owner.get()); });
+            } finally { removeMonitor(dashboard); shell("appops set " + pkg + " SYSTEM_ALERT_WINDOW " + previous); }
         }
     }
 
-    private void checkPage(String name, String binding, String category) {
+    private void checkCampusBounds(Context privateAppearance) throws Exception {
+        Configuration config = new Configuration(privateAppearance.getResources().getConfiguration()); config.fontScale = 1.3f;
+        Context appearance = privateAppearance.createConfigurationContext(config);
+        Class<?> factory = privateAppearance.getClassLoader().loadClass("dev.local.supercardui.DhuCardSurface");
+        View surface = (View) factory.getMethod("create", Context.class).invoke(null, appearance);
+        float density = appearance.getResources().getDisplayMetrics().density;
+        surface.measure(View.MeasureSpec.makeMeasureSpec(Math.round(280 * density), View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(Math.round(450 * density), View.MeasureSpec.EXACTLY));
+        surface.layout(0, 0, surface.getMeasuredWidth(), surface.getMeasuredHeight());
+        View qr = surface.findViewWithTag("dhu_qr"), barcode = surface.findViewWithTag("dhu_barcode");
+        if (qr.getHeight() < 128 * density || barcode.getWidth() < 200 * density)
+            throw new AssertionError("Large-font scan area too small on Android: QR=" + qr.getHeight() / density);
+    }
+
+    private void checkPage(String name, String binding, String category) throws Exception {
         String pkg = getTargetContext().getPackageName();
         if (category != null) {
             android.content.pm.ResolveInfo entry = getTargetContext().getPackageManager().resolveActivity(
@@ -108,22 +140,28 @@ public final class SettingsStartupTest extends Instrumentation {
         if (category != null) intent.addCategory(category);
         Activity activity = startActivitySync(intent);
         try {
-            waitForIdleSync();
-            // Covers first traversal and asynchronous root/diagnostics callbacks.
-            SystemClock.sleep(name.equals("HostToolsActivity") ? 8000 : 1000);
-            waitForIdleSync();
-            AtomicReference<Throwable> failure = new AtomicReference<>();
-            runOnMainSync(() -> {
-                try {
-                    View view = activity.getWindow().getDecorView().findViewWithTag((name.equals("NativeCardsActivity") ? "native_" : "settings_") + binding);
-                    if (activity.isFinishing() || view == null || !view.isAttachedToWindow() || view.getWidth() <= 0)
-                        throw new AssertionError(name + ": M3E page missing or not laid out");
-                    if (!view.getContext().getClassLoader().loadClass("dev.local.supercardui." + (name.equals("NativeCardsActivity") ? "NativeCardsSurface" : "SettingsSurface"))
-                            .getClassLoader().getClass().getName().equals("dalvik.system.DelegateLastClassLoader"))
-                        throw new AssertionError(name + ": UI was not loaded from its isolated archive");
-                } catch (Throwable error) { failure.set(error); }
+            waitForIdleSync(); SystemClock.sleep(name.equals("HostToolsActivity") ? 8000 : 1000); waitForIdleSync();
+            main(() -> {
+                View view = activity.getWindow().getDecorView().findViewWithTag("settings_" + binding);
+                if (activity.isFinishing() || view == null || !view.isAttachedToWindow() || view.getWidth() <= 0)
+                    throw new AssertionError(name + ": M3E page missing or not laid out");
+                if (!view.getContext().getClassLoader().loadClass("dev.local.supercardui.SettingsSurface")
+                        .getClassLoader().getClass().getName().equals("dalvik.system.DelegateLastClassLoader"))
+                    throw new AssertionError(name + ": UI was not loaded from its isolated archive");
             });
-            if (failure.get() != null) throw new AssertionError(name + ": startup failed", failure.get());
         } finally { runOnMainSync(activity::finish); waitForIdleSync(); }
+    }
+
+    private interface CheckedAction { void run() throws Exception; }
+    private void main(CheckedAction action) throws Exception {
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        runOnMainSync(() -> { try { action.run(); } catch (Throwable error) { failure.set(error); } });
+        if (failure.get() != null) throw new AssertionError("Main thread check failed", failure.get());
+    }
+    private void shell(String command) throws Exception {
+        try (ParcelFileDescriptor pipe = getUiAutomation().executeShellCommand(command);
+             FileInputStream input = new FileInputStream(pipe.getFileDescriptor())) {
+            byte[] buffer = new byte[1024]; while (input.read(buffer) != -1) { /* drain to await completion */ }
+        }
     }
 }

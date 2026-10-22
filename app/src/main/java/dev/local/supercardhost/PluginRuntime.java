@@ -78,7 +78,6 @@ public final class PluginRuntime {
                 PluginRuntime::suspendOverlayForAuthentication,
                 () -> { updateState(host); restoreOverlayAfterAuthentication(); });
             type.getMethod("onCreate", Context.class, Context.class).invoke(instance, host, card);
-            NativeCardRouting.install(VectorEntry.current, host, instance);
             CardConfiguration.install(host);
             GestureHandle.install(host, loader, instance);
             updateState(host);
@@ -167,10 +166,8 @@ public final class PluginRuntime {
 
     static void showLegacy() {
         if (plugin == null) throw new IllegalStateException("卡包服务尚未连接");
-        NativeCardRouting.showLegacy(() -> {
-            try { requestOriginalShow(); }
-            catch (Exception error) { throw new IllegalStateException("原卡包打开失败，请重试", error); }
-        });
+        try { requestOriginalShow(); }
+        catch (Exception error) { throw new IllegalStateException("卡片唤出失败，请重试", error); }
     }
 
     public static void show() {

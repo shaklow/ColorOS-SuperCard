@@ -60,6 +60,11 @@ public final class CardConfiguration {
     }
 
     public static void request(Context context, String operation, Bundle values, Callback callback) {
+        // Sender identity sharing is required by the authenticated SystemUI protocol.
+        if (android.os.Build.VERSION.SDK_INT < 34) {
+            if (callback != null) callback.complete(null, "当前系统不支持卡片系统连接");
+            return;
+        }
         Intent intent = new Intent(ACTION).setPackage(SYSTEM_UI).putExtra("operation", operation);
         if (values != null) intent.putExtras(values);
         if ("openFloatSettings".equals(operation) || "openLegacyCards".equals(operation))
@@ -107,8 +112,9 @@ public final class CardConfiguration {
         if ("nativeCards".equals(operation)) {
             if (!intent.hasExtra("value") || !(intent.getExtras().get("value") instanceof Boolean))
                 throw new IllegalArgumentException("Missing card interface value");
-            if (!NativeCardRouting.isReady()) throw new IllegalStateException("新版卡片唤出尚未连接");
-            put(context, "supercard_native_cards", intent.getBooleanExtra("value", false) ? 1 : 0);
+            // Compatibility with an already-running 0.2.14 client. Page redirection
+            // is retired; even a stale request cannot enable it again.
+            put(context, "supercard_native_cards", 0);
             return;
         }
         if ("payUser".equals(operation)) {
@@ -210,8 +216,8 @@ public final class CardConfiguration {
 
     public static Bundle read(Context context) {
         Bundle state = new Bundle();
-        state.putBoolean("nativeCardsReady", NativeCardRouting.isReady());
-        state.putBoolean("nativeCards", Settings.Secure.getInt(context.getContentResolver(), "supercard_native_cards", 0) == 1);
+        state.putBoolean("nativeCardsReady", false);
+        state.putBoolean("nativeCards", false);
         state.putBoolean("enabled", Settings.Secure.getInt(context.getContentResolver(), "card_service_total_switch", 1) == 1);
         String side = Settings.Secure.getString(context.getContentResolver(), "navigation_gesture_right_side");
         state.putBoolean("unlocked", side == null || side.contains("side_card"));

@@ -34,8 +34,10 @@ class SettingsSurfaceTest {
 
     @Test fun hubKeepsEveryExistingSettingsRouteReachable() {
         val root = page("home")
-        for (name in listOf("open_cards", "open_runtime", "open_campus", "open_gestures"))
+        for (name in listOf("show_cards", "open_cards", "open_runtime", "open_campus", "open_gestures"))
             assertTrue(name, root.named<View>(name).isClickable)
+        assertNull(root.findViewWithTag<View>("settings_open_native"))
+        assertNull(root.findViewWithTag<View>("settings_native_cards"))
         SettingsSurface.render(root, Bundle().apply { putString("campus_summary", "已配置授权链接，点击管理") })
         assertEquals("已配置授权链接，点击管理", root.named<TextView>("campus_summary").text)
     }
