@@ -37,13 +37,14 @@ object CardManagementSurface {
             }
         }.apply { orientation = LinearLayout.VERTICAL; setPadding(gutter(), dp(8), gutter(), dp(28)) }
         private val list = vertical().apply { tag = key("list") }
-        private val count = text("正在读取…", 30, strong = true).apply { tag = key("count") }
+        private val count = text("正在读取…", 18, strong = true).apply { tag = key("count") }
         private val message = text("正在读取卡片…", 14, secondary = true).apply {
             tag = key("message"); accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         }
         private val permission = text("尚未取得设置保存权限，请到运行状态页完成授权。", 14, secondary = true)
         private val progress = ProgressBar(context).apply { tag = key("progress") }
-        private val retry = button("刷新卡片", "retry")
+        private val retry = button("刷新", "retry")
+        private lateinit var permissionPanel: View
         private val rows = linkedMapOf<String, Row>()
         private var order = emptyList<String>()
         private var writable = false
@@ -78,29 +79,33 @@ object CardManagementSurface {
             }, bottom = 12)
             add(text("卡片管理", 32, strong = true), bottom = 8)
             add(text("让常用卡片排在顺手的位置", 14, secondary = true), bottom = 24)
-            val hero = vertical().apply {
-                setPadding(dp(22), dp(22), dp(22), dp(22))
-                addView(text("我的卡片", 13, secondary = true)); addView(count, linear(top = 8))
-                addView(text("开关与顺序自动保存", 14, secondary = true), linear(top = 8))
+            val hero = horizontal().apply {
+                setPadding(dp(18), dp(12), dp(12), dp(12))
+                addView(count, LinearLayout.LayoutParams(0, -2, 1f))
+                addView(retry, LinearLayout.LayoutParams(dp(76), -2))
             }
-            add(card(hero, com.google.android.material.R.attr.colorPrimaryContainer), bottom = 20)
-            add(message, bottom = 10)
-            add(progress.apply { visibility = View.GONE }, bottom = 12, width = dp(28), height = dp(28))
-            add(permission, bottom = 12)
-            add(button("运行状态与 PAY", "runtime"), bottom = 8)
-            add(retry, bottom = 24)
+            add(card(hero, com.google.android.material.R.attr.colorPrimaryContainer), bottom = 12)
+            add(horizontal().apply {
+                addView(message, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) })
+                addView(progress, LinearLayout.LayoutParams(dp(24), dp(24)))
+            }, bottom = 16)
+            permissionPanel = vertical().apply {
+                addView(permission, linear(bottom = 8))
+                addView(button("运行状态与 PAY", "runtime"), linear(bottom = 16))
+            }.also { add(it) }
             add(text("显示顺序", 14, strong = true), bottom = 8)
-            add(text("长按拖动手柄排序，也可使用上移、下移。至少保留一张已启用卡片。", 13, secondary = true), bottom = 16)
+            add(text("长按手柄或点箭头排序，至少启用一张卡片。", 13, secondary = true), bottom = 16)
             add(list)
             add(button("手势与唤出", "gestures"), top = 16)
+            add(button("运行状态与 PAY", "runtime_footer").apply { setOnClickListener { emit("runtime") } })
         }
 
         fun render(state: Bundle) {
             busy = state.getBoolean("busy"); writable = state.getBoolean("writable")
             message.text = state.getString("message")
-            progress.visibility = if (busy) View.VISIBLE else View.GONE
+            progress.visibility = if (busy) View.VISIBLE else View.INVISIBLE
             retry.isEnabled = !busy
-            permission.visibility = if (!state.getBoolean("authorized", writable) && !busy) View.VISIBLE else View.GONE
+            permissionPanel.visibility = if (!state.getBoolean("authorized", writable) && !busy) View.VISIBLE else View.GONE
             val cards = state.getParcelableArrayList<Bundle>("cards").orEmpty()
             val next = cards.map { requireNotNull(it.getString("type")) }
             val enabled = cards.count { it.getBoolean("enabled") }
