@@ -14,6 +14,11 @@
 !/app/build.gradle.kts
 !/app/src/
 !/app/src/**
+!/dhu-ui/
+!/dhu-ui/build.gradle.kts
+!/dhu-ui/src/
+!/dhu-ui/src/**
+!/gradle.properties
 !/root-backend/
 !/root-backend/**
 !/tools/
