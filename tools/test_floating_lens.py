@@ -18,6 +18,7 @@ SOURCES = {
  public ViewGroup(android.content.Context c){super(c);}
  public void addView(View v,Object params){children.add(v);v.parent=this;if(failAdd)throw new IllegalStateException("attach failed");}
  public void removeView(View v){children.remove(v);v.parent=null;}
+ public int getChildCount(){return children.size();}public View getChildAt(int index){return children.get(index);}
 }''',
 'android.widget.FrameLayout': '''public class FrameLayout extends android.view.ViewGroup {
  public FrameLayout(android.content.Context c){super(c);}
@@ -63,14 +64,18 @@ public class TestFloatingLens {
   check(card.children.size()==2&&card.children.get(0)==existing,"Original card children retained");
   LensCardView surface=(LensCardView)card.children.get(1);
   check(surface.owner==card&&surface.parent==card&&surface.getContext()==context,"Same original card, context and window owner");
-  LensCardView.fail=true;Chain unavailable=new Chain(card);
+  Chain repeat=new Chain(card);
+  check(hook.intercept(repeat)==null&&repeat.proceeded==0,"Repeated initialization does not enter Compose");
+  check(card.children.size()==2&&card.children.get(1)==surface,"Repeated initialization does not duplicate surface or observer owner");
+  CameraCardView fallbackCard=new CameraCardView(context);View fallbackExisting=new View(context);fallbackCard.addView(fallbackExisting,null);
+  LensCardView.fail=true;Chain unavailable=new Chain(fallbackCard);
   check("original".equals(hook.intercept(unavailable))&&unavailable.proceeded==1,"Missing private UI falls back to original Compose");
-  check(card.children.size()==2,"Constructor failure does not alter original children");LensCardView.fail=false;
-  LensCardView.linkage=true;Chain linkage=new Chain(card);hook.intercept(linkage);
-  check(linkage.proceeded==1&&card.children.size()==2,"Dependency linkage failure preserves old card");LensCardView.linkage=false;
-  card.failAdd=true;Chain attach=new Chain(card);hook.intercept(attach);
-  check(attach.proceeded==1&&card.children.size()==2,"Partial attach is removed before original fallback");
-  check(card.children.get(0)==existing&&card.children.get(1)==surface,"Fallback leaves existing content untouched");
+  check(fallbackCard.children.size()==1,"Constructor failure does not alter original children");LensCardView.fail=false;
+  LensCardView.linkage=true;Chain linkage=new Chain(fallbackCard);hook.intercept(linkage);
+  check(linkage.proceeded==1&&fallbackCard.children.size()==1,"Dependency linkage failure preserves old card");LensCardView.linkage=false;
+  fallbackCard.failAdd=true;Chain attach=new Chain(fallbackCard);hook.intercept(attach);
+  check(attach.proceeded==1&&fallbackCard.children.size()==1,"Partial attach is removed before original fallback");
+  check(fallbackCard.children.get(0)==fallbackExisting&&card.children.get(1)==surface,"Fallback leaves existing content untouched");
   XposedModule absent=new XposedModule();boolean rejected=false;
   try {LensSurfaceBridge.install(absent,new ClassLoader(null){});}catch(ClassNotFoundException expected){rejected=true;}
   check(rejected&&absent.hooks.isEmpty(),"Unknown ABI rejected before installing any hook");

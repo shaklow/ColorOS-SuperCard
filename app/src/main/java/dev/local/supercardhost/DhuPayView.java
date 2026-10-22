@@ -5,7 +5,6 @@ import android.app.KeyguardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
-import android.database.ContentObserver;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Rect;
@@ -15,6 +14,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
 import android.os.SystemClock;
+import android.util.Log;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.LinearLayout;
@@ -25,13 +25,16 @@ import java.util.concurrent.Future;
 /** Native payment UI. Previews contain no generated or cached payment credentials. */
 public final class DhuPayView extends LinearLayout {
     private static final ExecutorService IO = Executors.newFixedThreadPool(2);
-    private final Handler main = new Handler(Looper.getMainLooper());
+    private final Handler control = new Handler(Looper.getMainLooper());
+    private final FloatingCardScope lifecycle = new FloatingCardScope((stage, error) -> {
+        Log.w("SuperCardDhuUi", "Campus observation failed: " + stage, error);
+        if ("register".equals(stage)) showMessage("校园卡服务暂不可用，点击码区重试");
+    });
     private final boolean preview;
     private final Context services;
     private Context appearance;
     private DhuMaterialUi.Surface ui;
-    private final ContentObserver observer;
-    private boolean active = true, attached, observing, visible, loading, secureApplied;
+    private boolean active = true, visible, loading, secureApplied;
     private long generation, nextRefresh;
     private String code;
     private Bitmap qrBitmap, barBitmap;
@@ -42,15 +45,19 @@ public final class DhuPayView extends LinearLayout {
         super(context); this.preview = preview; this.services = context.getApplicationContext();
         setOrientation(VERTICAL);
         bindSurface(context);
-        observer = new ContentObserver(main) {
-            @Override public void onChange(boolean self) { invalidateRequest(); if (canShow()) requestCode(); }
-        };
     }
 
     private void bindSurface(Context context) {
-        appearance = context;
-        ui = DhuMaterialUi.create(context);
-        addView(ui.root, new LayoutParams(-1, -1));
+        DhuMaterialUi.Surface next = DhuMaterialUi.create(context);
+        // Prepare and attach the replacement before releasing the cleared old surface.
+        try { addView(next.root, new LayoutParams(-1, -1)); }
+        catch (RuntimeException error) {
+            if (next.root.getParent() == this) removeView(next.root);
+            throw error;
+        }
+        View previous = ui == null ? null : ui.root;
+        ui = next; appearance = context;
+        if (previous != null) removeView(previous);
         ui.qr.setOnClickListener(v -> requestCode()); ui.empty.setOnClickListener(v -> requestCode());
         ui.barcode.setOnClickListener(v -> enlarge()); ui.numbers.setOnClickListener(v -> enlarge());
         ui.qr.setOnLongClickListener(v -> { enlarge(); return true; });
@@ -70,11 +77,11 @@ public final class DhuPayView extends LinearLayout {
     @Override protected void onConfigurationChanged(Configuration config) {
         super.onConfigurationChanged(config);
         invalidateRequest();
-        removeAllViews();
-        bindSurface(getContext().createConfigurationContext(config));
+        try { bindSurface(getContext().createConfigurationContext(config)); }
+        catch (RuntimeException | LinkageError error) { Log.w("SuperCardDhuUi", "Cannot update campus appearance", error); }
         visible = false;
-        main.removeCallbacks(tick);
-        if (attached && active && !preview) main.post(tick);
+        lifecycle.remove(tick);
+        if (lifecycle.isAttached() && active && !preview) lifecycle.post(tick);
     }
 
     static Intent settingsIntent(Context context) {
@@ -82,28 +89,27 @@ public final class DhuPayView extends LinearLayout {
     }
 
     public void setActive(boolean active) {
-        if (Looper.myLooper() != Looper.getMainLooper()) { main.post(() -> setActive(active)); return; }
+        if (Looper.myLooper() != Looper.getMainLooper()) { control.post(() -> setActive(active)); return; }
         this.active = active;
-        if (!active) { visible = false; main.removeCallbacks(tick); invalidateRequest(); }
-        else if (attached && !preview) { main.removeCallbacks(tick); main.post(tick); }
+        if (!active) { visible = false; lifecycle.remove(tick); invalidateRequest(); }
+        else if (lifecycle.isAttached() && !preview) { lifecycle.post(tick); }
     }
 
     @Override protected void onAttachedToWindow() {
-        super.onAttachedToWindow(); attached = true;
+        super.onAttachedToWindow();
         if (preview) return;
-        try { services.getContentResolver().registerContentObserver(DhuPayProvider.URI, false, observer); observing = true; }
-        catch (RuntimeException unavailable) { showMessage("校园卡服务暂不可用，点击码区重试"); }
-        main.post(tick);
+        if (lifecycle.attach(services.getContentResolver(), DhuPayProvider.URI, () -> {
+            invalidateRequest(); if (canShow()) requestCode();
+        }) && active) lifecycle.post(tick);
     }
 
     @Override protected void onDetachedFromWindow() {
-        attached = false; main.removeCallbacks(tick); invalidateRequest();
-        if (observing) { services.getContentResolver().unregisterContentObserver(observer); observing = false; }
-        super.onDetachedFromWindow();
+        try { lifecycle.detach(); }
+        finally { invalidateRequest(); visible = false; super.onDetachedFromWindow(); }
     }
 
     private boolean canShow() {
-        if (preview || !ui.available || !attached || !active || !isShown() || getWindowVisibility() != VISIBLE) return false;
+        if (preview || !ui.available || !lifecycle.isAttached() || !active || !isShown() || getWindowVisibility() != VISIBLE) return false;
         PowerManager power = services.getSystemService(PowerManager.class);
         KeyguardManager keyguard = services.getSystemService(KeyguardManager.class);
         if (power == null || !power.isInteractive() || keyguard == null || keyguard.isKeyguardLocked()) return false;
@@ -113,7 +119,7 @@ public final class DhuPayView extends LinearLayout {
 
     private final Runnable tick = new Runnable() {
         @Override public void run() {
-            if (!attached || preview) return;
+            if (!lifecycle.isAttached() || !active || preview) return;
             boolean now = canShow();
             if (!now && visible) invalidateRequest();
             if (now && !visible) { visible = true; requestCode(); }
@@ -124,12 +130,13 @@ public final class DhuPayView extends LinearLayout {
                 else showCountdown(remaining);
             }
             if (!now && ui.available) showMessage("解锁并打开卡片后获取付款码");
-            main.postDelayed(this, 1000);
+            lifecycle.postDelayed(this, 1000);
         }
     };
 
     private void requestCode() {
         if (loading || !canShow()) return;
+        FloatingCardScope.Token attachment = lifecycle.token();
         loading = true; long expected = ++generation;
         clearCode(); ui.qr.setEnabled(false); showMessage("正在获取付款码…");
         ui.emptyIcon.setVisibility(GONE); ui.loading.setVisibility(VISIBLE);
@@ -142,7 +149,7 @@ public final class DhuPayView extends LinearLayout {
                 }
             } catch (Exception unavailable) { reply = null; }
             Bundle result = reply; Bitmap imageQr = q, imageBar = b;
-            main.post(() -> {
+            lifecycle.postFor(attachment, () -> {
                 if (expected != generation) return;
                 task = null; loading = false; ui.qr.setEnabled(true);
                 if (!canShow()) { clearCode(); return; }

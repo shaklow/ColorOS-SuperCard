@@ -13,6 +13,8 @@ final class LensSurfaceBridge {
         compose.setAccessible(true);
         module.hook(compose).intercept(chain -> {
             ViewGroup card = (ViewGroup) chain.getThisObject();
+            for (int index = 0; index < card.getChildCount(); index++)
+                if (card.getChildAt(index) instanceof LensCardView) return null;
             LensCardView content = null;
             try {
                 content = new LensCardView(card.getContext(), card);
