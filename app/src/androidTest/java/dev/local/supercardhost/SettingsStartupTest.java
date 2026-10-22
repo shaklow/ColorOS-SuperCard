@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.AppOpsManager;
 import android.app.Instrumentation;
 import android.content.Context;
+import android.content.ContentResolver;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.PixelFormat;
@@ -16,6 +17,7 @@ import android.hardware.display.DisplayManager;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
+import android.net.Uri;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
@@ -24,6 +26,7 @@ import java.io.FileInputStream;
 import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 
 /** Installed unified APK: settings startup and private M3E content in a non-Activity window. */
 public final class SettingsStartupTest extends Instrumentation {
@@ -37,12 +40,48 @@ public final class SettingsStartupTest extends Instrumentation {
             checkPage("HostToolsActivity", "toggle_wx_scan", null);
             checkPage("DhuPaySettingsActivity", "url", null);
             checkFloatingWindow();
-            result.putString("stream", "Settings startup: 4 entry points passed\nFloating cards: window embedding passed\n");
+            checkFloatingSessions();
+            result.putString("stream", "Settings startup: 4 entry points passed\nFloating cards: window embedding passed\nFloating lifecycle: detach/reattach passed\n");
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
             result.putString("stream", android.util.Log.getStackTraceString(error));
             finish(Activity.RESULT_CANCELED, result);
         }
+    }
+
+    private void checkFloatingSessions() throws Exception {
+        Context target = getTargetContext();
+        Class<?> type = target.getClassLoader().loadClass("dev.local.supercardhost.FloatingCardScope");
+        Method attach = type.getMethod("attach", ContentResolver.class, Uri.class, Runnable.class);
+        Method detach = type.getMethod("detach"), token = type.getMethod("token");
+        Method post = type.getMethod("post", Runnable.class);
+        Method postFor = type.getMethod("postFor", token.getReturnType(), Runnable.class);
+        Class<?> provider = target.getClassLoader().loadClass("dev.local.supercardhost.DhuPayProvider");
+        java.lang.reflect.Field uriField = provider.getDeclaredField("URI"); uriField.setAccessible(true);
+        Uri uri = (Uri) uriField.get(null);
+        AtomicInteger actions = new AtomicInteger();
+        AtomicReference<RuntimeException> failure = new AtomicReference<>();
+        Object scope = type.getConstructor(BiConsumer.class).newInstance(
+                (BiConsumer<String, RuntimeException>) (stage, error) -> failure.set(error));
+        try {
+            main(() -> {
+                if (!(Boolean) attach.invoke(scope, target.getContentResolver(), uri, (Runnable) () -> {}))
+                    throw new AssertionError("Initial floating attachment missing");
+                if ((Boolean) attach.invoke(scope, target.getContentResolver(), uri, (Runnable) () -> {}))
+                    throw new AssertionError("Duplicate floating attachment accepted");
+                Object old = token.invoke(scope);
+                post.invoke(scope, (Runnable) () -> actions.addAndGet(100));
+                detach.invoke(scope);
+                attach.invoke(scope, target.getContentResolver(), uri, (Runnable) () -> {});
+                if ((Boolean) postFor.invoke(scope, old, (Runnable) () -> actions.addAndGet(100)))
+                    throw new AssertionError("Old floating result crossed a reattachment");
+                if (!(Boolean) postFor.invoke(scope, token.invoke(scope), (Runnable) actions::incrementAndGet))
+                    throw new AssertionError("Current floating work was rejected");
+            });
+            waitForIdleSync();
+            if (failure.get() != null) throw new AssertionError("Floating observation failed", failure.get());
+            if (actions.get() != 1) throw new AssertionError("Detached work still ran: " + actions.get());
+        } finally { main(() -> detach.invoke(scope)); }
     }
 
     private void checkFloatingWindow() throws Exception {

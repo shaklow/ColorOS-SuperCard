@@ -33,7 +33,8 @@ def main():
         print(result.stdout, end='')
         if result.returncode or not re.search(r'INSTRUMENTATION_CODE:\s*-1\s*$', result.stdout) \
                 or 'Settings startup: 4 entry points passed' not in result.stdout \
-                or 'Floating cards: window embedding passed' not in result.stdout:
+                or 'Floating cards: window embedding passed' not in result.stdout \
+                or 'Floating lifecycle: detach/reattach passed' not in result.stdout:
             raise SystemExit('Settings startup failed; inspect the instrumentation output and device crash log.')
     finally:
         if args.logcat_out:
