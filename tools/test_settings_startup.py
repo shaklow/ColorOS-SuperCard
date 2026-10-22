@@ -25,7 +25,9 @@ def main():
                 if len(apks) != 1:
                     raise SystemExit(f'Expected one {pattern}, found {len(apks)}')
                 subprocess.run(command + ['install', '-r', str(apks[0])], check=True, timeout=args.timeout)
-        result = subprocess.run(command + ['shell', 'am', 'instrument', '-w',
+        # Raw mode retains INSTRUMENTATION_CODE even when the result has a stream
+        # message. Pretty output prints only that message and hides the code.
+        result = subprocess.run(command + ['shell', 'am', 'instrument', '-w', '-r',
             'dev.local.supercardhost.test/dev.local.supercardhost.SettingsStartupTest'],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=args.timeout)
         print(result.stdout, end='')
