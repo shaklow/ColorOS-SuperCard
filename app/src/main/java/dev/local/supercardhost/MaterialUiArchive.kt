@@ -2,7 +2,6 @@ package dev.local.supercardhost
 
 import android.content.Context
 import android.content.ContextWrapper
-import android.content.res.AssetManager
 import android.content.res.Configuration
 import android.content.res.Resources
 import android.os.Bundle
@@ -33,7 +32,9 @@ internal object MaterialUiArchive {
         INFLATER("inflater", LayoutInflater::class.java, Context::class.java)
     }
 
-    private class Loaded(val assets: AssetManager, val loader: ClassLoader, val methods: Map<Operation, Method>)
+    // Keep the PackageManager Resources owner: Android may replace its AssetManager
+    // when resource overlays change. A detached cached AssetManager would stay stale.
+    private class Loaded(val source: Resources, val loader: ClassLoader, val methods: Map<Operation, Method>)
     @Volatile private var loaded: Loaded? = null
 
     @Synchronized private fun load(host: Context): Loaded {
@@ -46,7 +47,7 @@ internal object MaterialUiArchive {
         val application = requireNotNull(info.applicationInfo)
         application.sourceDir = archive.absolutePath; application.publicSourceDir = archive.absolutePath
         application.splitSourceDirs = null; application.splitPublicSourceDirs = null
-        val assets = host.packageManager.getResourcesForApplication(application).assets
+        val source = host.packageManager.getResourcesForApplication(application)
         val loader = DelegateLastClassLoader(archive.absolutePath, MaterialUiArchive::class.java.classLoader)
         val factory = loader.loadClass("$PACKAGE.DhuCardSurface")
         // Validate the entire framework-only contract before publishing any shared state.
@@ -57,7 +58,7 @@ internal object MaterialUiArchive {
                 }
             }
         }
-        return Loaded(assets, loader, methods).also { loaded = it }
+        return Loaded(source, loader, methods).also { loaded = it }
     }
 
     @JvmStatic fun prepare(host: Context) { ArchiveContext(host, load(host)) }
@@ -74,14 +75,14 @@ internal object MaterialUiArchive {
     }
 
     private class ArchiveContext(host: Context, private val archive: Loaded) : ContextWrapper(host) {
-        private val archiveResources = Resources(archive.assets, host.resources.displayMetrics, host.resources.configuration)
+        private val archiveResources = Resources(archive.source.assets, host.resources.displayMetrics, host.resources.configuration)
         private val archiveTheme = archiveResources.newTheme().apply {
             val style = archiveResources.getIdentifier("Theme.DhuUi", "style", PACKAGE)
             if (style == 0) throw Resources.NotFoundException("Missing M3E theme")
             applyStyle(style, true)
         }
         override fun getResources() = archiveResources
-        override fun getAssets() = archive.assets
+        override fun getAssets() = archiveResources.assets
         override fun getClassLoader() = archive.loader
         override fun getTheme() = archiveTheme
         override fun setTheme(id: Int) { archiveTheme.applyStyle(id, true) }
