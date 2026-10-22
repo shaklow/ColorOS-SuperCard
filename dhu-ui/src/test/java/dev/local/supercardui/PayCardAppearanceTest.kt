@@ -82,6 +82,29 @@ class PayCardAppearanceTest {
     }
 
     @Test @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun settingsGlyphIsVisibleInBothThemes() {
+        for (night in listOf(Configuration.UI_MODE_NIGHT_NO, Configuration.UI_MODE_NIGHT_YES)) {
+            val app = RuntimeEnvironment.getApplication()
+            val config = Configuration(app.resources.configuration).apply {
+                uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or night
+            }
+            val context = app.createConfigurationContext(config)
+            val settings = ImageView(context)
+            PayCardAppearance.style(context, "card", arrayOf(ImageView(context), ImageView(context), settings, TextView(context)))
+            val side = (48 * context.resources.displayMetrics.density + .5f).toInt()
+            settings.measure(exact(side), exact(side)); settings.layout(0, 0, side, side)
+            val image = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
+            settings.draw(Canvas(image))
+            val background = image.getPixel(side / 8, side / 2)
+            var glyph = 0
+            for (y in side / 4 until side * 3 / 4) for (x in side / 4 until side * 3 / 4)
+                if (ColorUtils.calculateContrast(image.getPixel(x, y), background) > 3) glyph++
+            assertTrue("PAY settings gear must be painted with visible contrast", glyph > side)
+            image.recycle()
+        }
+    }
+
+    @Test @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun settingsAndFunctionSurfacesRenderWithBothThemesAndFontScales() {
         for (night in listOf(Configuration.UI_MODE_NIGHT_NO, Configuration.UI_MODE_NIGHT_YES)) {
             for (scale in listOf(1f, 1.3f, 1.6f)) {

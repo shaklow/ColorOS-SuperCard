@@ -49,7 +49,7 @@ object PayCardAppearance {
         logo.imageTintList = ColorStateList.valueOf(primary)
         settings.setImageDrawable(icon)
         settings.clearColorFilter()
-        settings.imageTintList = null
+        settings.imageTintList = ColorStateList.valueOf(foreground)
         settings.background = ripple
         settings.setPadding(d.dp(12), d.dp(12), d.dp(12), d.dp(12))
         settings.minimumWidth = d.dp(48); settings.minimumHeight = d.dp(48)
