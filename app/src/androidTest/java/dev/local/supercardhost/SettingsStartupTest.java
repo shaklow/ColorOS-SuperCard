@@ -209,18 +209,21 @@ public final class SettingsStartupTest extends Instrumentation {
             CountDownLatch laidOut = new CountDownLatch(1);
             AtomicReference<View> control = new AtomicReference<>();
             main(() -> {
-                View button = current.getWindow().getDecorView().findViewWithTag("show_cards");
-                if (button == null) throw new AssertionError("Lens test control missing");
-                control.set(button);
                 Runnable ready = () -> {
-                    if (button.getWidth() > 0 && button.getHeight() > 0 && current.hasWindowFocus()) laidOut.countDown();
+                    View button = current.getWindow().getDecorView().findViewWithTag("show_cards");
+                    if (button != null && button.getWidth() > 0 && button.getHeight() > 0 && current.hasWindowFocus()) {
+                        control.set(button); laidOut.countDown();
+                    }
                 };
-                button.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> ready.run());
+                // ActivityMonitor can return before content installation and the first
+                // traversal. Observe the decor, not a child that may not exist yet.
+                current.getWindow().getDecorView().getViewTreeObserver().addOnGlobalLayoutListener(ready::run);
                 current.getWindow().getDecorView().getViewTreeObserver()
                         .addOnWindowFocusChangeListener(focused -> ready.run());
                 ready.run();
             });
-            if (!laidOut.await(10, TimeUnit.SECONDS)) throw new AssertionError("Lens control did not finish secondary-display layout/focus");
+            if (!laidOut.await(10, TimeUnit.SECONDS))
+                throw new AssertionError("Lens control did not finish secondary-display content/layout/focus");
             int[] location = new int[2];
             main(() -> {
                 View button = control.get();
