@@ -57,7 +57,7 @@ final class DhuMaterialUi {
             if (icon != 0) {
                 try {
                     Drawable drawable = context.getResources().getDrawable(icon, context.getTheme());
-                    settings.getClass().getMethod("setIcon", Drawable.class).invoke(settings, drawable);
+                    settings.getClass().getMethod("setGlyph", Drawable.class).invoke(settings, drawable);
                 } catch (ReflectiveOperationException | RuntimeException ignored) { /* bundled standard icon */ }
             }
         }

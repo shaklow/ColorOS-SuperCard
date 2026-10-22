@@ -20,6 +20,24 @@ import java.io.File
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31, 36])
 class NativeCardsSurfaceTest {
+    @Test @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun iconGlyphIsActuallyPaintedInsideItsTouchTarget() {
+        val button = CardIconButton(RuntimeEnvironment.getApplication().let {
+            androidx.appcompat.view.ContextThemeWrapper(it, R.style.Theme_DhuUi)
+        })
+        val side = (48 * button.resources.displayMetrics.density).toInt()
+        button.measure(View.MeasureSpec.makeMeasureSpec(side, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(side, View.MeasureSpec.EXACTLY))
+        button.layout(0, 0, side, side)
+        val bitmap = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
+        button.draw(Canvas(bitmap))
+        var ink = 0
+        for (y in side / 4 until side * 3 / 4) for (x in side / 4 until side * 3 / 4)
+            if (android.graphics.Color.alpha(bitmap.getPixel(x, y)) > 128) ink++
+        assertTrue("Settings glyph must be visible, not merely clickable", ink > side)
+        bitmap.recycle()
+    }
+
     @Test fun changedOrEmptyCameraSelectionsRemoveStaleActions() {
         val root = NativeCardsSurface.create(RuntimeEnvironment.getApplication())
         NativeCardsSurface.renderLens(root, Bundle().apply {

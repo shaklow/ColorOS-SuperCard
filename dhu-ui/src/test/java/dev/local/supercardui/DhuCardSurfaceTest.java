@@ -80,6 +80,11 @@ public class DhuCardSurfaceTest {
         root.layout(0, 0, width, height);
         assertTrue("QR area must remain usable", tag(root, "qr").getHeight() >= 128 * density);
         assertTrue("Barcode must have a measurable scan area", tag(root, "barcode").getWidth() >= 200 * density);
+        TextView account = (TextView) tag(root, "account");
+        View heading = (View) account.getParent().getParent();
+        int[] subtitle = new int[2], header = new int[2];
+        account.getLocationOnScreen(subtitle); heading.getLocationOnScreen(header);
+        assertTrue("Large-type subtitle must not be clipped", subtitle[1] + account.getHeight() <= header[1] + heading.getHeight());
         assertTrue("Settings stays inside the card", tag(root, "settings").getRight() <= width);
     }
 

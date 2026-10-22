@@ -1,7 +1,6 @@
 package dev.local.supercardui
 
 import android.content.Context
-import android.content.res.ColorStateList
 import android.graphics.Typeface
 import android.view.View
 import android.widget.FrameLayout
@@ -22,11 +21,9 @@ internal class CardDesign(val context: Context) {
         setTextColor(color(if (secondary) com.google.android.material.R.attr.colorOnSurfaceVariant else com.google.android.material.R.attr.colorOnSurface))
         if (bold) setTypeface(typeface, Typeface.BOLD)
     }
-    fun icon(action: String, description: String, drawable: Int) = MaterialButton(context, null,
-        com.google.android.material.R.attr.materialIconButtonStyle).apply {
+    fun icon(action: String, description: String, drawable: Int) = CardIconButton(context).apply {
         tag = "native_$action"; contentDescription = description
-        icon = AppCompatResources.getDrawable(context, drawable)
-        iconTint = ColorStateList.valueOf(color(com.google.android.material.R.attr.colorOnSurfaceVariant))
+        setGlyph(AppCompatResources.getDrawable(context, drawable))
         layoutParams = LinearLayout.LayoutParams(dp(48), dp(48))
     }
     fun button(action: String, label: String) = MaterialButton(context, null,
