@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Resource/code archive only. No component is installed or exported. -->
+    <application android:theme="@style/Theme.DhuUi" android:allowBackup="false"
+        android:supportsRtl="true" />
+</manifest>

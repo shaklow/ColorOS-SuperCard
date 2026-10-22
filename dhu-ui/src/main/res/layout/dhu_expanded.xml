@@ -1,0 +1,27 @@
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    style="@style/Dhu.Card" android:layout_width="match_parent" android:layout_height="wrap_content">
+    <ScrollView android:layout_width="match_parent" android:layout_height="wrap_content" android:fillViewport="true">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:padding="20dp" android:gravity="center_horizontal">
+        <com.google.android.material.textview.MaterialTextView android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="@string/dhu_code_title"
+            android:textAppearance="?attr/textAppearanceTitleLarge" android:layout_marginBottom="16dp" />
+        <com.google.android.material.card.MaterialCardView style="@style/Dhu.CodeSurface"
+            android:layout_width="match_parent" android:layout_height="wrap_content">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:padding="12dp">
+                <ImageView android:tag="dhu_qr" android:layout_width="match_parent" android:layout_height="240dp"
+                    android:scaleType="fitCenter" android:contentDescription="校园卡付款二维码" />
+                <ImageView android:tag="dhu_barcode" android:layout_width="match_parent" android:layout_height="72dp"
+                    android:scaleType="fitCenter" android:contentDescription="校园卡付款条形码" />
+                <TextView android:tag="dhu_numbers" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:textColor="#FF20252C" android:textSize="14sp" android:gravity="center"
+                    android:fontFamily="monospace" android:layout_marginTop="12dp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+        <com.google.android.material.button.MaterialButton android:tag="dhu_close"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginTop="16dp" android:text="@string/dhu_close" />
+    </LinearLayout>
+    </ScrollView>
+</com.google.android.material.card.MaterialCardView>

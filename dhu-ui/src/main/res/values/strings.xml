@@ -1,0 +1,12 @@
+<resources>
+    <string name="dhu_title">东华校园卡</string>
+    <string name="dhu_account">默认电子账户</string>
+    <string name="dhu_settings">校园卡设置</string>
+    <string name="dhu_digits">查看付款码数字</string>
+    <string name="dhu_hint">点击刷新 · 长按放大</string>
+    <string name="dhu_empty">打开卡片后获取付款码</string>
+    <string name="dhu_qr_description">校园卡付款二维码，点击刷新，长按放大</string>
+    <string name="dhu_bar_description">校园卡付款条形码，点击放大</string>
+    <string name="dhu_code_title">付款码</string>
+    <string name="dhu_close">关闭</string>
+</resources>

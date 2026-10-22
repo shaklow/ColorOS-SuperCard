@@ -18,7 +18,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'PAY 启动退避离线测试失败' }
     python tools/rebuild_assets.py
     if ($LASTEXITCODE -ne 0) { throw '补丁 DEX 再生与现有资产不一致' }
-    $gradleArgs = @(':app:clean', ':app:assembleDebug', '--no-daemon', '--console', 'plain')
+    $gradleArgs = @(':app:clean', ':dhu-ui:testDebugUnitTest', ':app:assembleDebug', '--no-daemon', '--console', 'plain')
     if ($Offline) { $gradleArgs += '--offline' }
     # Windows PowerShell 5 treats compiler stderr notes as terminating errors.
     # Gradle's exit code determines success; keep its diagnostics in the log.
@@ -29,6 +29,8 @@ try {
         $gradleExit = $LASTEXITCODE
     } finally { $ErrorActionPreference = $previousPreference }
     if ($gradleExit -ne 0) { throw 'Gradle 构建失败' }
+    python tools/verify_dhu_ui.py
+    if ($LASTEXITCODE -ne 0) { throw 'M3E 界面模块封装校验失败' }
     $version = Get-Content -Raw ci/version.json | ConvertFrom-Json
     python tools/unified-prototype/build.py --version-code $version.code --version-name "$($version.name)-unified" --sign
     if ($LASTEXITCODE -ne 0) { throw '统一 APK 合包失败' }
