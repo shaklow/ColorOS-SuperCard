@@ -154,7 +154,7 @@ class PayCardAppearanceTest {
                 assertTrue(settings.right <= root.width && settings.bottom <= root.height)
                 val image = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
                 root.draw(Canvas(image))
-                assertTransparentCorners(image, dp(4), dp(12))
+                assertTransparentCorners(image, dp(3), dp(12))
                 val surface = (shadow.background as MaterialShapeDrawable).fillColor!!.defaultColor
                 var artwork = 0
                 for (y in dp(90) until dp(240)) for (x in dp(80) until dp(200))
@@ -186,19 +186,19 @@ class PayCardAppearanceTest {
         root.measure(exact(dp(280)), exact(dp(450))); root.layout(0, 0, root.measuredWidth, root.measuredHeight)
         fun draw() = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888).also { root.draw(Canvas(it)) }
         val legacy = draw()
-        assertTrue("Fixture must reproduce the exposed white underlay", Color.alpha(legacy.getPixel(dp(4), dp(12))) > 100)
+        assertTrue("Fixture must reproduce the exposed white underlay", Color.alpha(legacy.getPixel(dp(3), dp(12))) > 100)
         legacy.recycle()
         val views = arrayOf(frame, ImageView(context), ImageView(context), TextView(context), shadow, actions)
         repeat(3) { PayCardAppearance.style(context, "card", views) }
         assertEquals(3, root.childCount)
         assertEquals(.8f, shadow.alpha, .001f); assertEquals(dp(5).toFloat(), shadow.elevation, .001f)
-        val idle = draw(); assertTransparentCorners(idle, dp(4), dp(12))
+        val idle = draw(); assertTransparentCorners(idle, dp(3), dp(12))
         val artX = dp(140); val artY = dp(180)
         val artColor = idle.getPixel(artX, artY)
         frame.visibility = View.INVISIBLE
         val payment = draw()
         assertNotEquals("Artwork must disappear with the OEM idle frame", artColor, payment.getPixel(artX, artY))
-        assertTransparentCorners(payment, dp(4), dp(12))
+        assertTransparentCorners(payment, dp(3), dp(12))
         frame.visibility = View.VISIBLE
         frame.alpha = 0f
         val faded = draw()

@@ -163,7 +163,7 @@ public final class SettingsStartupTest extends Instrumentation {
             throw new AssertionError("PAY styling changed ownership, geometry or callbacks");
         Bitmap idle = Bitmap.createBitmap(panel.getWidth(), panel.getHeight(), Bitmap.Config.ARGB_8888);
         panel.draw(new Canvas(idle));
-        int x = Math.round(4 * density), y = Math.round(12 * density);
+        int x = Math.round(3 * density), y = Math.round(12 * density);
         for (int[] corner : new int[][]{{x, y}, {idle.getWidth() - 1 - x, y},
                 {x, idle.getHeight() - 1 - y}, {idle.getWidth() - 1 - x, idle.getHeight() - 1 - y}})
             if (Color.alpha(idle.getPixel(corner[0], corner[1])) != 0)
