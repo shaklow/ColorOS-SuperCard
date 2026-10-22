@@ -28,10 +28,7 @@ public final class PayRuntimeBridge {
     private static final AtomicBoolean INSTALLED = new AtomicBoolean();
     private static final Map<String, Long> LAST_ERRORS = new HashMap<>();
 
-    private static volatile Object activeManager;
-    private static volatile long launchGeneration;
-    private static volatile String activeFunction;
-    private static volatile int activeUser = -1;
+    private static final PaySessionState SESSION = new PaySessionState();
     private static volatile Method isActiveMethod;
     private static volatile Method displayIdMethod;
     private static Method taskIdMethod;
@@ -43,11 +40,7 @@ public final class PayRuntimeBridge {
     private static Handler worker;
     private static int previousDisplay = -1;
     private static Application hostApplication;
-    private static ComponentName observedPaymentPage;
-    private static Object touchView;
-    private static String touchActivity;
-    private static Method updateTouchMethod;
-    private static long appliedTouchGeneration = -1;
+    private static PayTouchPolicy touchPolicy;
 
     // These notification markers are accessed only on the main thread.
     private static Object lastManager;
@@ -94,11 +87,8 @@ public final class PayRuntimeBridge {
                     try {
                         String function = (String) chain.getArg(0);
                         int user = PayUserSettings.resolve(host, function);
-                        activeManager = chain.getThisObject();
-                        activeFunction = function;
-                        activeUser = user;
-                        observedPaymentPage = null;
-                        launchGeneration++;
+                        SESSION.begin(chain.getThisObject(), function, user);
+                        if (touchPolicy != null) touchPolicy.observe(null);
                     } catch (Throwable error) {
                         failure("capture payment manager", error);
                         PayUserRouting.failed(host, error);
@@ -113,7 +103,11 @@ public final class PayRuntimeBridge {
             worker = new Handler(thread.getLooper());
             worker.post(POLL);
             Log.i(TAG, "Original payment task observer installed");
-            try { installTouchPolicy(module, pluginLoader); }
+            try {
+                touchPolicy = new PayTouchPolicy(host, () -> SESSION.getSnapshot().getFunction(),
+                        PayRuntimeBridge::getActiveDisplayId, PayRuntimeBridge::failure);
+                touchPolicy.install(module, pluginLoader);
+            }
             catch (Throwable error) { failure("install payment touch policy", error); }
             try { PayDiagnostics.install(module, host, pluginLoader); }
             catch (Throwable error) { failure("install optional payment diagnostics", error); }
@@ -125,42 +119,46 @@ public final class PayRuntimeBridge {
 
     /** Returns only the original manager's current, active virtual display. */
     public static int getWeChatRideDisplayId() {
-        return "wx_ride".equals(activeFunction) || "wx2_ride".equals(activeFunction)
+        String function = SESSION.getSnapshot().getFunction();
+        return "wx_ride".equals(function) || "wx2_ride".equals(function)
                 ? getActiveDisplayId() : -1;
     }
 
-    static long getLaunchGeneration() { return launchGeneration; }
+    static long getLaunchGeneration() { return SESSION.getSnapshot().getGeneration(); }
 
     static int userForFunction(android.content.Context host, String function) {
-        if (function.equals(activeFunction) && activeUser >= 0) return activeUser;
+        PaySessionState.Snapshot session = SESSION.getSnapshot();
+        if (function.equals(session.getFunction()) && session.getUser() >= 0) return session.getUser();
         return PayUserSettings.resolve(host, function);
     }
 
     static int userForApp(android.content.Context host, String app) {
-        if (app.equals(PayUserSettings.appForFunction(activeFunction)) && activeUser >= 0) return activeUser;
+        PaySessionState.Snapshot session = SESSION.getSnapshot();
+        if (app.equals(PayUserSettings.appForFunction(session.getFunction())) && session.getUser() >= 0) return session.getUser();
         return PayUserSettings.resolve(host, PayUserSettings.WECHAT.equals(app) ? "wx_pay" : "alipay_pay");
     }
 
     static void userChanged(String app) {
-        if (!app.equals(PayUserSettings.appForFunction(activeFunction))) return;
-        // Do not restore an old-account task after changing the preference in the host app.
-        Object manager = activeManager;
-        activeManager = null;
-        activeFunction = null;
-        activeUser = -1;
-        observedPaymentPage = null;
-        ++launchGeneration;
+        PaySessionState.Snapshot session = SESSION.getSnapshot();
+        if (!app.equals(PayUserSettings.appForFunction(session.getFunction())) || !SESSION.clear(session)) return;
+        // Invalidate before releasing so a queued task/SDK callback cannot restore the old account.
+        Object manager = session.getManager();
+        if (touchPolicy != null) touchPolicy.observe(null);
         if (manager != null) try { findMethod(manager.getClass(), "release").invoke(manager); }
         catch (Exception error) { failure("release previous PAY user", error); }
     }
 
     public static int getActiveDisplayId() {
-        Object manager = activeManager;
-        if (manager == null) return -1;
+        return displayId(SESSION.getSnapshot());
+    }
+
+    private static int displayId(PaySessionState.Snapshot session) {
+        Object manager = session.getManager();
+        if (manager == null || !SESSION.isCurrent(session)) return -1;
         try {
             if (!Boolean.TRUE.equals(isActiveMethod.invoke(manager))) return -1;
             int id = ((Number) displayIdMethod.invoke(manager)).intValue();
-            return id > 0 ? id : -1;
+            return id > 0 && SESSION.isCurrent(session) ? id : -1;
         } catch (Throwable error) {
             failure("read payment display", error);
             return -1;
@@ -192,61 +190,18 @@ public final class PayRuntimeBridge {
         });
     }
 
-    private static void installTouchPolicy(XposedModule module, ClassLoader loader) throws Exception {
-        Class<?> constants = loader.loadClass("com.vivo.card.utils.CardTypeConstant");
-        module.hook(findMethod(constants, "isNoInterceptActivity", String.class)).intercept(chain -> {
-            if (Boolean.TRUE.equals(chain.proceed())) return true;
-            String activity = (String) chain.getArg(0);
-            ComponentName observed = observedPaymentPage;
-            String expected = PayTouchSettings.targetPackage(activeFunction);
-            if (getActiveDisplayId() <= 0 || observed == null || expected == null
-                    || !expected.equals(observed.getPackageName())
-                    || !observed.getClassName().equals(activity)) return false;
-            // The original authentication/fullscreen and virtual mask handling stay in charge.
-            if (isAuthenticationPage(activity)) return false;
-            return PayTouchSettings.enabled(hostApplication, activeFunction);
-        });
-        Class<?> view = loader.loadClass("com.vivo.card.cards.cardpay.PayCardView");
-        updateTouchMethod = findMethod(view, "updatePayClickListener", String.class);
-        module.hook(updateTouchMethod).intercept(chain -> {
-            touchView = chain.getThisObject();
-            touchActivity = (String) chain.getArg(0);
-            return chain.proceed();
-        });
-        for (String name : new String[]{"onCardPackHiding", "onDetachedFromWindow", "resetCard"}) {
-            module.hook(findMethod(view, name)).intercept(chain -> {
-                if (touchView == chain.getThisObject()) {
-                    touchView = null;
-                    touchActivity = null;
-                    observedPaymentPage = null;
-                }
-                return chain.proceed();
-            });
-        }
-    }
-
-    private static boolean isAuthenticationPage(String activity) {
-        return "com.tencent.mm.plugin.walletlock.gesture.ui.GestureGuardLogicUI".equals(activity)
-                || "com.tencent.mm.plugin.walletlock.fingerprint.ui.FingerprintWalletLockUI".equals(activity)
-                || "com.tencent.mm.framework.app.UIPageFragmentActivity".equals(activity)
-                || "com.alipay.mobile.security.gesture.ui.GestureLiteActivity_".equals(activity);
-    }
-
     static void refreshTouchPolicy() {
-        // Configuration requests are delivered on SystemUI's main thread.
-        if (touchView == null || touchActivity == null || getActiveDisplayId() <= 0) return;
-        try { updateTouchMethod.invoke(touchView, touchActivity); }
-        catch (Throwable error) { failure("refresh payment touch policy", error); }
+        // Configuration requests and original view binding are delivered on the main thread.
+        if (touchPolicy != null) touchPolicy.refresh();
     }
 
     private static final Runnable POLL = new Runnable() {
         @Override
         public void run() {
             try {
-                Object manager = activeManager;
-                long generation = launchGeneration;
-                int user = activeUser;
-                int display = getActiveDisplayId();
+                PaySessionState.Snapshot session = SESSION.getSnapshot();
+                int user = session.getUser();
+                int display = displayId(session);
                 if (previousDisplay > 0 && display < 0) {
                     MAIN.post(() -> {
                         if (getActiveDisplayId() < 0) PluginRuntime.setPaymentSecure(false);
@@ -275,7 +230,7 @@ public final class PayRuntimeBridge {
                     ComponentName component = selected.topActivity;
                     int selectedDisplay = taskDisplay(selected);
                     int taskId = selected.taskId;
-                    MAIN.post(() -> synchronizeTask(manager, generation, display,
+                    MAIN.post(() -> synchronizeTask(session, display,
                             selectedDisplay, taskId, component));
                 }
             } catch (Throwable error) {
@@ -287,13 +242,13 @@ public final class PayRuntimeBridge {
         }
     };
 
-    private static void synchronizeTask(Object manager, long generation, int display,
+    private static void synchronizeTask(PaySessionState.Snapshot session, int display,
             int selectedDisplay, int taskId, ComponentName component) {
         // A snapshot queued before release/relaunch must not restore a stale virtual top.
-        if (activeManager != manager || launchGeneration != generation
-                || getActiveDisplayId() != display) return;
-
-        observedPaymentPage = display > 0 && selectedDisplay == display ? component : null;
+        if (!SESSION.isCurrent(session) || displayId(session) != display) return;
+        Object manager = session.getManager();
+        long generation = session.getGeneration();
+        if (touchPolicy != null) touchPolicy.observe(display > 0 && selectedDisplay == display ? component : null);
 
         if (display > 0 && selectedDisplay == display && manager != null) {
             boolean changed = lastManager != manager || lastManagerGeneration != generation
@@ -332,12 +287,8 @@ public final class PayRuntimeBridge {
         }
         // Reusing a display and the same page for another function still changes its
         // per-function policy, even when the original top-activity notification is deduplicated.
-        if (display > 0 && selectedDisplay == display && appliedTouchGeneration != generation
-                && touchView != null) {
-            touchActivity = component.getClassName();
-            refreshTouchPolicy();
-            appliedTouchGeneration = generation;
-        }
+        if (display > 0 && selectedDisplay == display && touchPolicy != null)
+            touchPolicy.applyGeneration(generation, component);
     }
 
     private static void correctTaskId(Object manager, int taskId) throws Exception {

@@ -113,3 +113,5 @@ Actions 产物包含统一 APK、SHA256 和核对报告，不再构建或上传 
 0.2.19 收拢校园卡、LENS、PAY 的公共外观参数，沿用现有布局；校园卡与 LENS 使用共享 Kotlin 挂载作用域，统一监听和任务清理、拒绝重新挂载后的旧结果，并避免重复添加 LENS 内容。实现及验证边界见 [浮层挂载生命周期](docs/floating-card-lifecycle.md)。
 
 0.2.20 修复 LENS 选择模式后外跳的问题，加入卡片内相机显示、触摸与退出清理。实现及验证边界见 [卡片内相机](docs/lens-embedded-camera.md)。
+
+0.2.21 将 PAY 的启动会话与触摸策略拆为独立 Kotlin 组件，任务观察使用一致的会话快照。界面与支付入口保持原样，详见 [桥接职责](docs/pay-bridge-structure.md)。
