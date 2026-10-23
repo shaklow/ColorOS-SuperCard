@@ -9,6 +9,8 @@
 | GestureSettingsSurface | 主题、布局、触摸和无障碍；只使用框架 Bundle/Consumer 与宿主通信 |
 | GestureAreaActivity | Activity 生命周期、事件转发、平台请求与主线程调度 |
 | FloatSettingsState | 不可变显示快照、滑块换算和显示状态 |
+| GesturePolicy | 纯 Kotlin 锁屏、熄屏、非锁屏策略与不可变区域；浮标显示规则与触发规则分离 |
+| GesturePolicyAdapter | Secure 设置读取和 Android Rect 转换 |
 | GestureSettingsRules | 无平台依赖的范围解析、缩放/取整、编辑下限、默认值、侧滑标记及透明度规则 |
 | FloatSettingsSession | 合并保存队列、确认值、读请求代数、预览节流/续租、断线恢复和关闭 |
 | FloatPreviewLease | SystemUI 中按调用 UID、页面标识和单调时钟代数隔离预览 |
@@ -24,4 +26,6 @@ API 31/36 验证合并写入、关闭后排空、读写乱序、重复回调、�
 
 0.2.26 统一设置读取、默认值修复、实际触发区域和浮标提示的范围规则。保存格式仍为四段有限浮点数，按来源宽度缩放，再取整到物理像素；非法或退化区域不参与触发。已保存的短范围可以读取且不被自动扩展，用户编辑范围时沿用 4% 下限。只读取不会改写设置。侧滑开关按完整标记识别，避免子串误判。
 
-后续计划依次为：分离手势策略与系统适配、整理启动与恢复流程。每阶段保留独立 PR、完整构建和安装回归。
+0.2.27 将区域和分支判断抽到纯 Kotlin GesturePolicy，GestureConfigBridge 仅投影原厂 ABI，GestureHandle 读取同一决策。熄屏分支不会绘制提示，但仍按自身开关处理手势。矩阵测试覆盖总开关、侧滑、损坏范围、锁屏/熄屏独立开关、四种方式和未知方式。
+
+后续继续整理启动与恢复流程，再实现自研 Kotlin 卡包运行时与浮层，验证安全显示、锁屏与触摸配合后逐张迁移。必要的 ColorOS、钱包、小布接口保留独立适配层。每阶段保留独立 PR、完整构建和安装回归。

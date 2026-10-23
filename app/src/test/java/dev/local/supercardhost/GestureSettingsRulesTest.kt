@@ -18,7 +18,9 @@ class GestureSettingsRulesTest {
     private fun policy(raw: String?): Rect {
         val type = Class.forName("dev.local.supercardhost.GestureConfigBridge\$Policy")
         val constructor = type.declaredConstructors.single().apply { isAccessible = true }
-        val value = constructor.newInstance(true, "side_back;side_card", raw, false, 0, false, 0, false, true, metrics())
+        val value = constructor.newInstance(GesturePolicy.evaluate(
+            GesturePolicy.Settings(true, "side_back;side_card", raw, false, 0, false, 0),
+            GesturePolicy.Screen(false, true), GesturePolicy.Display(1000, 2000, 1f)))
         return type.getDeclaredField("navigationRegion").apply { isAccessible = true }.get(value) as Rect
     }
     private fun handle(raw: String?): Rect = GestureHandle::class.java.getDeclaredMethod("navigationRegion", String::class.java, DisplayMetrics::class.java)
