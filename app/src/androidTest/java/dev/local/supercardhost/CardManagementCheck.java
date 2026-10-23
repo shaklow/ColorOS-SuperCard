@@ -16,6 +16,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.CompoundButton;
 import java.io.FileInputStream;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.CountDownLatch;
@@ -66,6 +67,17 @@ final class CardManagementCheck {
             if (!"custom".equals(pay.getString("skinName")) || pay.getJSONArray("functions").getJSONObject(0).getBoolean("enable")
                     || camera.getJSONArray("functions").getJSONObject(0).getBoolean("enable"))
                 throw new AssertionError("Management edits altered function or skin configuration");
+            JSONObject external = json();
+            JSONArray externalCards = external.getJSONArray("cards");
+            for (int i = 0; i < externalCards.length(); i++) {
+                JSONObject value = externalCards.getJSONObject(i);
+                if ("memory".equals(value.getString("type"))) value.put("enable", false);
+            }
+            write(external.toString());
+            await(() -> ready(current, "toggle_memory") && onMain(() ->
+                    !((CompoundButton) named(current, "toggle_memory")).isChecked()
+                            && "4 / 5 张已启用".contentEquals(((TextView) named(current, "count")).getText())),
+                    "External provider edit was not reflected in the management UI");
             main(() -> named(current, "settings_pay").performClick());
             if (editor.getHits() != 1) throw new AssertionError("Original PAY function editor was not reached");
             main(current::finish); test.waitForIdleSync(); page = null;
