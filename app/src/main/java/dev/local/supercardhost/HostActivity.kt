@@ -23,7 +23,7 @@ class HostActivity : M3eSettingsActivity() {
                 }
             }
         }
-        ui.on("open_cards") { open("com.vivo.card.setting.CardSettingActivity") }
+        ui.on("open_cards") { open("$packageName.CardManagementActivity") }
         ui.on("open_runtime") { open("$packageName.HostToolsActivity") }
         ui.on("open_campus") { open("$packageName.DhuPaySettingsActivity") }
         ui.on("open_gestures") { open("$packageName.GestureAreaActivity") }

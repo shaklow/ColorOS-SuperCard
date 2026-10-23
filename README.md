@@ -117,3 +117,5 @@ Actions 产物包含统一 APK、SHA256 和核对报告，不再构建或上传 
 0.2.21 将 PAY 的启动会话、任务观察、显示访问与触摸策略拆为独立 Kotlin 组件，任务观察使用一致的会话快照。界面与支付入口保持原样，详见 [桥接职责](docs/pay-bridge-structure.md)。
 
 0.2.22 拆分 Root 显示连接、Binder 通信及系统显示包装；旧后端的排队死亡通知不再影响重连后的安全状态，创建失败按原连接清理显示。详见 [Root 显示桥接](docs/root-display-structure.md)。
+
+0.2.23 将卡片管理改为统一 Material 界面，支持开关、长按拖动和上移/下移排序，保留原配置与功能编辑入口，旧管理组件名继续有效。详见 [卡片管理](docs/card-management.md)。
