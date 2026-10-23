@@ -62,7 +62,16 @@ final class NativeCoreCheck implements AutoCloseable {
         awaitLayout();
         main(() -> {
             if (!(body.getChildAt(0) instanceof NativeLensCard)) throw new AssertionError("Native reopening did not restore camera content");
+            allowed.set(false);
+            try {
+                host.show(List.of("dhu", "camera"), "camera");
+                throw new AssertionError("Locked native show was accepted");
+            } catch (IllegalStateException expected) { }
+            if (host.getShowing() || body.getChildCount() != 0 || root.isAttachedToWindow())
+                throw new AssertionError("Rejected native show retained locked content/window");
+            allowed.set(true); host.show(List.of("dhu", "camera"), "camera");
         });
+        awaitLayout();
     }
     private void awaitLayout() throws Exception {
         long deadline = SystemClock.uptimeMillis() + 5000;

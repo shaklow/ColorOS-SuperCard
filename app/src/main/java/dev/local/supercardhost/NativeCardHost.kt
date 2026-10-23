@@ -57,10 +57,12 @@ internal class NativeCardHost(private val context: Context, private val type: In
         }
         // Footer-only swipes preserve camera controls, nested scrolling and payment gestures.
         listOf("previous", "next", "close").forEach { action ->
-            root.findViewWithTag<View>("native_$action").setOnTouchListener { _, event ->
+            root.findViewWithTag<View>("native_$action").setOnTouchListener { button, event ->
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> downX = event.rawX
                     MotionEvent.ACTION_UP -> if (kotlin.math.abs(event.rawX - downX) > dp(64)) {
+                        val cancel = MotionEvent.obtain(event).apply { this.action = MotionEvent.ACTION_CANCEL }
+                        try { button.onTouchEvent(cancel) } finally { cancel.recycle() }
                         move(if (event.rawX < downX) 1 else -1); return@setOnTouchListener true
                     }
                 }
@@ -69,13 +71,18 @@ internal class NativeCardHost(private val context: Context, private val type: In
         }
     }
     fun show(cards: List<String>, selected: String? = null) {
-        check(allowed()) { "请先解锁手机" }
-        bind(); deck.show(cards, selected)
+        if (!allowed()) { hide(); error("请先解锁手机") }
+        bind()
+        try { deck.show(cards, selected) } catch (error: Throwable) {
+            if (!allowed()) hide()
+            throw error
+        }
         root.requestFocus()
     }
     fun move(delta: Int) {
         if (!allowed()) { hide(); return }
         try { deck.move(delta) } catch (error: Exception) {
+            if (!allowed()) hide()
             android.util.Log.w("SuperCardNative", "Cannot switch card", error)
         }
     }

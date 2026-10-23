@@ -1,6 +1,7 @@
 package dev.local.supercardui
 
 import android.content.Context
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -19,7 +20,14 @@ object NativeCardSurface {
     @JvmStatic fun render(root: View, state: Bundle) = (root.tag as Page).render(state)
     private class Page(val context: Context) {
         var action: Consumer<Bundle>? = null
-        val root = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; tag = this@Page }
+        val root = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL; tag = this@Page
+            background = GradientDrawable().apply {
+                setColor(MaterialColors.getColor(context, com.google.android.material.R.attr.colorSurfaceContainerLow, 0))
+                cornerRadius = context.resources.getDimension(R.dimen.card_surface_corner)
+            }
+            clipToOutline = true
+        }
         private val previous = button("上一张", "previous")
         private val next = button("下一张", "next")
         init {

@@ -17,6 +17,6 @@
 
 API 31/36 验证窗口导航布局、内容归属、失败清理、重开和旧令牌失效。Android 36 安装回归创建真实独立浮层，操作真实 Material 导航、验证 FLAG_SECURE、关闭/重开和锁定门禁清理，再将真实副屏 TextureView 接入该容器，沿生产 LensDisplayBackend 启动 Activity 并注入触摸。
 
-CI 使用 `--secure-native` 明确要求可 root 的测试模拟器：以 root adbd 启动 instrumentation，通过 UiAutomation 的测试专用权限覆盖临时授予本测试 UID CAPTURE_SECURE_VIDEO_OUTPUT，创建真实 SECURE 虚拟显示并核对系统显示标志。覆盖在 finally 中撤销，生产权限、代码和 root daemon 认证没有放宽。测试不请求付款、不获取真实相机素材、不修改用户授权链接。普通设备不带该参数时不宣称完成安全显示验证。
+CI 使用 `--secure-native` 明确要求可 root 的测试模拟器：以 root adbd 启动 instrumentation，通过 UiAutomation 的测试专用权限覆盖临时授予本测试 UID CAPTURE_SECURE_VIDEO_OUTPUT，创建真实 SECURE 虚拟显示并核对系统显示标志。仅对显示信任、输入注入及后台 Activity 启动采用 shell 权限身份，避免全量 shell 身份覆盖本测试 UID 的安全显示权限。覆盖生效和 finally 撤销后的权限状态均有断言，生产权限、代码和 root daemon 认证没有放宽。测试不请求付款、不获取真实相机素材、不修改用户授权链接。普通设备不带该参数时不宣称完成安全显示验证。
 
 标准模拟器缺少目标 ColorOS、Vector、原相机 HAL，以及真实小布/钱包账号。模拟器结果不能证明目标 ROM 的解锁入口、原系统相机全部模式或 root daemon 的实际策略已验收。因此本版提供单独试用入口，保持原手势路由；目标 ROM 链路确认后再推广为默认入口并迁移 PAY，随后按界面约束逐张迁移记忆和卡券。自研核心首期完成不等于全部原厂运行代码已删除。

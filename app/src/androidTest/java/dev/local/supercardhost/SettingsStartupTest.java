@@ -188,7 +188,11 @@ public final class SettingsStartupTest extends Instrumentation {
         CountDownLatch clicked = new CountDownLatch(1);
         Activity activity = null;
         ActivityMonitor monitor = addMonitor(target.getPackageName() + ".HostActivity", null, false);
-        getUiAutomation().adoptShellPermissionIdentity();
+        // Full shell adoption takes precedence over per-UID permission overrides.
+        // Keep secure-output checks on this test UID; delegate only the existing display/input needs.
+        getUiAutomation().adoptShellPermissionIdentity("android.permission.ADD_TRUSTED_DISPLAY",
+                "android.permission.INJECT_EVENTS", "android.permission.START_ACTIVITIES_FROM_BACKGROUND");
+        int securePermissionBefore = target.checkSelfPermission("android.permission.CAPTURE_SECURE_VIDEO_OUTPUT");
         boolean securePermissionOverridden = false;
         try {
             target.getClassLoader().loadClass("org.lsposed.hiddenapibypass.HiddenApiBypass")
@@ -197,6 +201,9 @@ public final class SettingsStartupTest extends Instrumentation {
                 getUiAutomation().getClass().getMethod("addOverridePermissionState", int.class, String.class, int.class)
                         .invoke(getUiAutomation(), android.os.Process.myUid(), "android.permission.CAPTURE_SECURE_VIDEO_OUTPUT", 0);
                 securePermissionOverridden = true;
+                if (target.checkSelfPermission("android.permission.CAPTURE_SECURE_VIDEO_OUTPUT")
+                        != android.content.pm.PackageManager.PERMISSION_GRANTED)
+                    throw new AssertionError("Scoped secure-display permission override did not take effect");
             }
             main(() -> {
                 TextureView view = new TextureView(card.getContext()); texture.set(view);
@@ -274,9 +281,13 @@ public final class SettingsStartupTest extends Instrumentation {
                 });
             } finally {
                 try {
-                    if (securePermissionOverridden) getUiAutomation().getClass()
+                    if (securePermissionOverridden) {
+                        getUiAutomation().getClass()
                             .getMethod("removeOverridePermissionState", int.class, String.class)
                             .invoke(getUiAutomation(), android.os.Process.myUid(), "android.permission.CAPTURE_SECURE_VIDEO_OUTPUT");
+                        if (target.checkSelfPermission("android.permission.CAPTURE_SECURE_VIDEO_OUTPUT") != securePermissionBefore)
+                            throw new AssertionError("Scoped secure-display permission override was not restored");
+                    }
                 } finally { removeMonitor(monitor); getUiAutomation().dropShellPermissionIdentity(); }
             }
         }
