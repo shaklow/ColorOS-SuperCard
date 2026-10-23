@@ -68,3 +68,11 @@ androidComponents {
         variant.sources.assets?.addGeneratedSourceDirectory(dhuUiAssets, PrepareDhuUiAssets::outputDirectory)
     }
 }
+
+// Preserve assertion details in CI logs when a remote test fails.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+}

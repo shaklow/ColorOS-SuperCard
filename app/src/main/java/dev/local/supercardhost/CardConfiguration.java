@@ -23,6 +23,7 @@ public final class CardConfiguration {
     private static final String SYSTEM_UI = "com.android.systemui";
     private static final String FLOAT_SETTINGS_DEADLINE = "openFloatSettingsDeadlineElapsed";
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    private static final FloatPreviewLease PREVIEWS = new FloatPreviewLease();
     public interface Callback { void complete(Bundle state, String error); }
 
     public static void install(Application host) throws Exception {
@@ -40,7 +41,7 @@ public final class CardConfiguration {
                     return;
                 }
                 try {
-                    apply(host, intent);
+                    apply(host, intent, uid);
                     Bundle result;
                     if ("openFloatSettings".equals(intent.getStringExtra("operation"))) {
                         result = new Bundle(); result.putBoolean("opened", true);
@@ -72,7 +73,7 @@ public final class CardConfiguration {
         BroadcastOptions options = BroadcastOptions.makeBasic().setShareIdentityEnabled(true);
         // Bound read/ephemeral-preview and fixed settings-launch calls. A late callback after a service
         // restart must not wedge the client's querying/previewSending flags.
-        boolean bounded = callback != null && ("query".equals(operation) || "preview".equals(operation)
+        boolean bounded = callback != null && ("query".equals(operation) || "preview".equals(operation) || "previewEnd".equals(operation)
                 || "openFloatSettings".equals(operation) || "diagnostics".equals(operation)
                 || "payTouch".equals(operation) || "payUser".equals(operation)
                 || "openLegacyCards".equals(operation) || "nativeCards".equals(operation));
@@ -100,7 +101,7 @@ public final class CardConfiguration {
         }
     }
 
-    private static void apply(Context context, Intent intent) {
+    private static void apply(Context context, Intent intent, int senderUid) {
         String operation = intent.getStringExtra("operation");
         if ("query".equals(operation) || "diagnostics".equals(operation)) return;
         if ("openLegacyCards".equals(operation)) {
@@ -142,11 +143,8 @@ public final class CardConfiguration {
             long remaining = intent.getLongExtra(FLOAT_SETTINGS_DEADLINE, 0) - SystemClock.elapsedRealtime();
             if (remaining <= 0 || remaining > 5000)
                 throw new IllegalArgumentException("Float-bar settings launch expired");
-            Intent settings = new Intent().setClassName("com.coloros.smartsidebar",
-                    "com.oplus.smartsidebar.settings.FloatBarSettingsActivity")
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    .putExtra("CARD_FLOATBAR_MODE", true)
-                    .putExtra("dev.local.supercardhost.CARD_FLOATBAR_MODE", true);
+            Intent settings = new Intent().setClassName("dev.local.supercardhost",
+                    "dev.local.supercardhost.GestureAreaActivity").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             context.startActivity(settings);
             return;
         }
@@ -158,14 +156,19 @@ public final class CardConfiguration {
                     || !(intent.getExtras().get("handleVisible") instanceof Boolean)) {
                 throw new IllegalArgumentException("Incomplete gesture preview");
             }
-            GestureHandle.setPreview(intent.getFloatExtra("top", Float.NaN),
-                    intent.getFloatExtra("bottom", Float.NaN),
-                    intent.getFloatExtra("handleOpacity", Float.NaN),
-                    intent.getBooleanExtra("handleVisible", false));
+            float top = intent.getFloatExtra("top", Float.NaN), bottom = intent.getFloatExtra("bottom", Float.NaN);
+            float opacity = intent.getFloatExtra("handleOpacity", Float.NaN);
+            if (!Float.isFinite(top) || !Float.isFinite(bottom) || top < 0 || bottom > 1
+                    || bottom - top + .000001f < .04f || !Float.isFinite(opacity) || opacity < 0 || opacity > 1)
+                throw new IllegalArgumentException("Invalid gesture preview");
+            if (PREVIEWS.preview(intent.getStringExtra("previewOwner"), intent.getLongExtra("previewEpoch", 0), senderUid,
+                    SystemClock.elapsedRealtimeNanos(), SystemClock.elapsedRealtime(), intent.getLongExtra("previewDeadline", 0)))
+                GestureHandle.setPreview(top, bottom, opacity, intent.getBooleanExtra("handleVisible", false));
             return;
         }
         if ("previewEnd".equals(operation)) {
-            GestureHandle.clearPreview();
+            if (PREVIEWS.end(intent.getStringExtra("previewOwner"), intent.getLongExtra("previewEpoch", 0), senderUid,
+                    SystemClock.elapsedRealtimeNanos())) GestureHandle.clearPreview();
             return;
         }
         if ("enabled".equals(operation)) {

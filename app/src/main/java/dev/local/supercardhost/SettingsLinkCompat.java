@@ -16,7 +16,7 @@ import io.github.libxposed.api.XposedModule;
 final class SettingsLinkCompat {
     private static final String TAG = "SuperCardSettings";
     private static final String KEY = "screen_slide_card_switch";
-    private static final String LABEL = "智能侧边栏-超级卡包浮标设置";
+    private static final String LABEL = "手势与唤出设置";
     private static final AtomicBoolean OPENING = new AtomicBoolean();
 
     private SettingsLinkCompat() { }
@@ -85,19 +85,18 @@ final class SettingsLinkCompat {
         }
         catch (Throwable failure) {
             OPENING.set(false);
-            Log.w(TAG, "Unable to request native float-bar settings", failure);
+            Log.w(TAG, "Unable to request gesture settings", failure);
             fallback(context, "卡包浮标设置服务不可用");
         }
     }
 
     private static void fallback(Context context, String error) {
-        Log.w(TAG, "Native float-bar settings unavailable: " + error);
+        Log.w(TAG, "Gesture settings service unavailable: " + error);
         Intent fallback = new Intent().setClassName("dev.local.supercardhost",
                 "dev.local.supercardhost.GestureAreaActivity");
         if (!(context instanceof Activity)) fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         try {
             context.startActivity(fallback);
-            Toast.makeText(context, "已打开备用浮标设置", Toast.LENGTH_SHORT).show();
         } catch (Throwable failure) {
             Log.w(TAG, "Unable to open fallback float-bar settings", failure);
             Toast.makeText(context, "无法打开浮标设置", Toast.LENGTH_SHORT).show();

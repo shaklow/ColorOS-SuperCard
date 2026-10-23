@@ -1,5 +1,7 @@
 # ColorOS 超级卡包
 
+0.2.25：手势与浮标设置统一到应用内 Material 页面，删除旧页面和混淆控件适配，拆分保存/预览会话并隔离旧页面请求。
+
 0.2.24：修复卡片管理保存闪烁，为按键和拖拽排序加入位移动画；支付卡与 LENS 功能设置使用统一 Material 页面，保留原配置、数量限制与旧入口。详见 [卡片管理与功能设置](docs/card-management.md)。
 
 将 vivo 超级卡包的原版界面接入 ColorOS，保留原卡片资源与交互，通过兼容模块连接 ColorOS 的系统能力。目前面向 ColorOS 17；需要 root 与支持 libxposed API 102 的 Vector。

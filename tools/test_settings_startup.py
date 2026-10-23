@@ -37,7 +37,8 @@ def main():
                 or 'Floating lifecycle: detach/reattach passed' not in result.stdout \
                 or 'Lens display: embedded activity and touch passed' not in result.stdout \
                 or 'Root display: callback wrapper passed' not in result.stdout \
-                or 'Card management: persistence, ordering and legacy entry passed' not in result.stdout:
+                or 'Card management: persistence, ordering and legacy entry passed' not in result.stdout \
+                or 'Gesture settings: session, preview ownership and new page passed' not in result.stdout:
             raise SystemExit('Settings startup failed; inspect the instrumentation output and device crash log.')
     finally:
         if args.logcat_out:
