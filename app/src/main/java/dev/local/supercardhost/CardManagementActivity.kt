@@ -23,7 +23,7 @@ class CardManagementActivity : M3eSettingsActivity() {
     private var observing = false
     private var closed = false
     private val observer = object : ContentObserver(main) {
-        override fun onChange(selfChange: Boolean) { refresh() }
+        override fun onChange(selfChange: Boolean) { refreshIfChanged() }
     }
 
     override fun onCreate(state: Bundle?) {
@@ -66,6 +66,20 @@ class CardManagementActivity : M3eSettingsActivity() {
         if (closed || root == null) return
         if (busy) { refreshPending = true; return }
         submit(null)
+    }
+
+    private fun refreshIfChanged() {
+        if (closed || root == null) return
+        if (busy) { refreshPending = true; return }
+        val base = confirmed ?: return refresh()
+        // Provider notifications can arrive after a confirmed write. An unchanged
+        // notification must not disable a button while its long press is pending.
+        worker.execute {
+            val unchanged = try { repository.isCurrent(base) } catch (_: Exception) { false }
+            main.post {
+                if (!closed && alive() && !unchanged && confirmed?.raw == base.raw) refresh()
+            }
+        }
     }
 
     private fun submit(edit: ((CardManagementState.Snapshot) -> String)?) {

@@ -64,6 +64,10 @@ internal class CardManagementRepository(private val storage: Storage) {
         fun canWrite(): Boolean
     }
 
+    fun isCurrent(snapshot: CardManagementState.Snapshot): Boolean = synchronized(lock) {
+        storage.read() == snapshot.raw
+    }
+
     fun load(): CardManagementState.Snapshot = synchronized(lock) {
         var raw = storage.read()
         if (raw.isNullOrBlank()) {

@@ -108,6 +108,7 @@ object CardManagementSurface {
             retry.isEnabled = !busy
             permissionPanel.visibility = if (!state.getBoolean("authorized", writable) && !busy) View.VISIBLE else View.GONE
             val cards = state.getParcelableArrayList<Bundle>("cards").orEmpty()
+            android.util.Log.d("SuperCardManagement", "render busy=$busy writable=$writable cards=${cards.size}")
             val next = cards.map { requireNotNull(it.getString("type")) }
             val enabled = cards.count { it.getBoolean("enabled") }
             count.text = if (cards.isEmpty()) "等待加载" else "$enabled / ${cards.size} 张已启用"
@@ -164,8 +165,10 @@ object CardManagementSurface {
                 content.addView(controls)
                 card = this@Page.card(content).apply { tag = key("card_$type") }
                 grip.setOnLongClickListener {
-                    writable && !busy && grip.startDragAndDrop(ClipData.newPlainText("卡片排序", ""),
+                    val started = writable && !busy && grip.startDragAndDrop(ClipData.newPlainText("卡片排序", ""),
                         View.DragShadowBuilder(card), Drag(this@Page, type), 0)
+                    android.util.Log.d("SuperCardManagement", "long press type=$type busy=$busy writable=$writable started=$started")
+                    started
                 }
                 up.setOnClickListener { move(-1) }; down.setOnClickListener { move(1) }
                 settings.setOnClickListener { if (!busy) emit("settings", type) }
