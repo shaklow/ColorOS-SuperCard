@@ -131,12 +131,7 @@ class CardManagementSurfaceTest {
                     assertNotNull(button.drawable); assertTrue(button.width >= 48 * density)
                     assertTrue(button.contentDescription.isNotBlank())
                     assertTrue(button.drawable.bounds.width() > 0)
-                    val icon = Bitmap.createBitmap(button.width, button.height, Bitmap.Config.ARGB_8888)
-                    button.draw(Canvas(icon))
-                    assertTrue("Reorder icon must produce visible pixels: $name", (0 until icon.width).any { x ->
-                        (0 until icon.height).any { y -> android.graphics.Color.alpha(icon.getPixel(x, y)) > 0 }
-                    })
-                    icon.recycle()
+                    assertTrue("Reorder icon must produce visible pixels: $name", hasInk(button))
                 }
                 for (type in listOf("pay", "camera", "dhu", "staging")) {
                     val button = root.named<MaterialButton>("settings_$type")
@@ -144,6 +139,7 @@ class CardManagementSurfaceTest {
                     assertEquals(1, button.layout.lineCount)
                     assertTrue(button.paint.measureText(button.text.toString()) <= button.width - button.paddingLeft - button.paddingRight)
                     assertTrue(button.layout?.getEllipsisCount(0) == 0)
+                    assertTrue("Editor action must produce visible text: $type", hasInk(button))
                 }
                 System.getenv("SUPERCARD_PREVIEW_DIR")?.let { directory ->
                     val suffix = "$widthDp-${if (night == Configuration.UI_MODE_NIGHT_YES) "dark" else "light"}-${android.os.Build.VERSION.SDK_INT}"
@@ -154,6 +150,16 @@ class CardManagementSurfaceTest {
                 }
             }
         }
+    }
+
+    private fun hasInk(view: View): Boolean {
+        val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+        view.draw(Canvas(bitmap))
+        val visible = (0 until bitmap.width).any { x ->
+            (0 until bitmap.height).any { y -> android.graphics.Color.alpha(bitmap.getPixel(x, y)) > 0 }
+        }
+        bitmap.recycle()
+        return visible
     }
 
     private fun save(root: View, file: File) {
