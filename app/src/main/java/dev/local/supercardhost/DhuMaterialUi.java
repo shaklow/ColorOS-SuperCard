@@ -100,6 +100,10 @@ final class DhuMaterialUi {
         return (View) MaterialUiArchive.create(host, Operation.CARD_MANAGEMENT);
     }
 
+    static View cardFunctions(Context host, String type) throws Exception {
+        return (View) MaterialUiArchive.create(host, Operation.CARD_FUNCTIONS, type);
+    }
+
     static void renderCardManagement(View root, android.os.Bundle state) throws Exception {
         MaterialUiArchive.update(root, Operation.RENDER_CARD_MANAGEMENT, state);
     }

@@ -11,13 +11,17 @@ import android.widget.Toast
 import java.util.concurrent.Executors
 import java.util.function.Consumer
 
-/** Management presentation only. The original editors and runtime cards keep their ownership. */
-class CardManagementActivity : M3eSettingsActivity() {
+/** Shared original-configuration editor; runtime cards and launch metadata keep their ownership. */
+open class CardManagementActivity : M3eSettingsActivity() {
+    protected open val functionEditor = false
+    private var cardType: String? = null
+    private var payMaximum = 6
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
     private lateinit var repository: CardManagementRepository
     private var root: View? = null
     private var confirmed: CardManagementState.Snapshot? = null
+    private var projected: CardManagementState.Snapshot? = null
     private var busy = false
     private var refreshPending = false
     private var observing = false
@@ -28,10 +32,18 @@ class CardManagementActivity : M3eSettingsActivity() {
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
-        title = "卡片管理"
+        if (functionEditor) {
+            cardType = intent.getStringExtra("mCardType")
+            if (cardType !in listOf("pay", "camera")) { finish(); return }
+            if (cardType == "pay") try {
+                val util = classLoader.loadClass("com.vivo.card.utils.CardUtil")
+                if (util.getDeclaredMethod("isBigFingerProjects").apply { isAccessible = true }.invoke(null) == true) payMaximum = 4
+            } catch (_: ReflectiveOperationException) { /* Standard ColorOS layout: six functions. */ }
+        }
+        title = when (cardType) { "pay" -> "支付卡设置"; "camera" -> "LENS 功能设置"; else -> "卡片管理" }
         repository = CardManagementRepository(CardManagementStorage(this))
         try {
-            root = DhuMaterialUi.cardManagement(this)
+            root = cardType?.let { DhuMaterialUi.cardFunctions(this, it) } ?: DhuMaterialUi.cardManagement(this)
             setContentView(root)
             DhuMaterialUi.bindCardManagement(root, Consumer(::action))
             render("正在读取卡片…")
@@ -86,24 +98,29 @@ class CardManagementActivity : M3eSettingsActivity() {
         if (busy || closed) return
         val base = confirmed
         if (edit != null && base == null) return
+        try { projected = if (edit == null) null else validate(CardManagementState.parse(edit(checkNotNull(base)))) }
+        catch (error: Exception) {
+            Toast.makeText(this, error.message ?: "无法修改功能", Toast.LENGTH_SHORT).show()
+            render("更改会自动保存"); return
+        }
         busy = true
-        render(if (edit == null) "正在读取卡片…" else "正在保存…")
+        render(if (base == null) "正在读取卡片…" else "更改会自动保存")
         worker.execute {
             var result: CardManagementState.Snapshot? = null
             var message: String? = null
-            try { result = if (edit == null) repository.load() else repository.change(checkNotNull(base), edit) }
+            try { result = validate(if (edit == null) repository.load() else repository.change(checkNotNull(base), edit)) }
             catch (error: Exception) {
                 message = error.cause?.message ?: error.message ?: "卡片配置暂不可用，请重试"
                 // A failed/stale write displays the actual provider value, never an optimistic switch state.
-                if (edit != null) try { result = repository.load() } catch (_: Exception) {}
+                if (edit != null) try { result = validate(repository.load()) } catch (_: Exception) {}
             }
             val snapshot = result
             val failure = message
             main.post {
                 if (closed || !alive()) return@post
-                busy = false; confirmed = snapshot
+                busy = false; confirmed = snapshot; projected = null
                 if (edit != null && failure != null) Toast.makeText(this, failure, Toast.LENGTH_LONG).show()
-                render(failure ?: if (edit != null) "已保存，卡片将按新设置显示" else "拖动卡片或使用上移、下移调整顺序")
+                render(failure ?: "更改会自动保存")
                 if (refreshPending) { refreshPending = false; refresh() }
             }
         }
@@ -115,17 +132,20 @@ class CardManagementActivity : M3eSettingsActivity() {
             "retry" -> refresh()
             "runtime" -> open(Intent(this, HostToolsActivity::class.java))
             "gestures" -> open(Intent(this, GestureAreaActivity::class.java))
+            "management" -> open(Intent(this, CardManagementActivity::class.java))
             "toggle" -> if (!busy) {
                 val type = event.getString("type") ?: return
-                submit { CardManagementState.enabled(it, type, event.getBoolean("value")) }
+                submit { snapshot -> cardType?.let { CardFunctionState.enabled(snapshot, it, type, event.getBoolean("value"), payMaximum) }
+                    ?: CardManagementState.enabled(snapshot, type, event.getBoolean("value")) }
             }
             "move" -> if (!busy) {
                 val type = event.getString("type") ?: return
                 val target = event.getString("target") ?: return
-                submit { CardManagementState.move(it, type, target) }
+                submit { snapshot -> cardType?.let { CardFunctionState.move(snapshot, it, type, target) }
+                    ?: CardManagementState.move(snapshot, type, target) }
             }
             "settings" -> if (!busy) when (val type = event.getString("type")) {
-                "pay", "camera" -> open(Intent().setClassName(packageName, "com.vivo.card.setting.CardEditActivity")
+                "pay", "camera" -> open(Intent(this, CardFunctionSettingsActivity::class.java)
                     .putExtra("mCardType", type))
                 "dhu" -> open(Intent(this, DhuPaySettingsActivity::class.java))
                 "staging" -> {
@@ -145,15 +165,27 @@ class CardManagementActivity : M3eSettingsActivity() {
     private fun render(message: String) {
         val view = root ?: return
         val authorized = RootAppSetup.canSave(this)
+        val display = projected ?: confirmed
+        val functions = cardType?.let { type -> display?.let { CardFunctionState.parse(it, type, payMaximum) } }
         val values = Bundle().apply {
-            putBoolean("busy", busy)
+            putBoolean("busy", busy && display == null)
+            putBoolean("saving", busy && display != null)
             putBoolean("authorized", authorized)
-            putBoolean("writable", confirmed != null && authorized)
+            putBoolean("writable", display != null && authorized)
             putString("message", message)
-            putParcelableArrayList("cards", ArrayList(confirmed?.cards.orEmpty().map { card -> Bundle().apply {
+            putInt("minimum", functions?.minimum ?: if (cardType == "camera") 4 else 1)
+            putInt("maximum", functions?.maximum ?: if (cardType == null) Int.MAX_VALUE else if (cardType == "camera") 6 else payMaximum)
+            putParcelableArrayList("cards", if (cardType != null) ArrayList(functions?.functions.orEmpty().map { function -> Bundle().apply {
+                putString("type", function.type); putString("title", function.title); putBoolean("enabled", function.enabled)
+            } }) else ArrayList(display?.cards.orEmpty().map { card -> Bundle().apply {
                 putString("type", card.type); putString("title", card.title); putBoolean("enabled", card.enabled)
             } }))
         }
         DhuMaterialUi.renderCardManagement(view, values)
+    }
+
+    private fun validate(snapshot: CardManagementState.Snapshot): CardManagementState.Snapshot {
+        cardType?.let { CardFunctionState.parse(snapshot, it, payMaximum) }
+        return snapshot
     }
 }

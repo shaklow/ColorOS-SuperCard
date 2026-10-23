@@ -82,6 +82,31 @@ class CardManagementSurfaceTest {
         assertTrue(root.named<View>("down_pay").isEnabled)
     }
 
+    @Test fun savingKeepsTheProjectedSwitchAndDoesNotFlashDisabledColors() {
+        val root = page(); CardManagementSurface.render(root, state())
+        val row = root.named<View>("card_pay")
+        val pending = state().apply {
+            putBoolean("saving", true)
+            getParcelableArrayList<Bundle>("cards")!![0].putBoolean("enabled", false)
+        }
+        CardManagementSurface.render(root, pending)
+        val toggle = root.named<MaterialSwitch>("toggle_pay")
+        assertFalse(toggle.isChecked); assertTrue(toggle.isEnabled); assertFalse(toggle.isClickable)
+        assertTrue(root.named<View>("down_pay").isEnabled); assertFalse(root.named<View>("down_pay").isClickable)
+        pending.putBoolean("saving", false); CardManagementSurface.render(root, pending)
+        assertSame(row, root.named<View>("card_pay")); assertFalse(toggle.isChecked); assertTrue(toggle.isClickable)
+    }
+
+    @Test fun functionPagesRespectLimitsWithoutOfferingUnrelatedCardEditors() {
+        for (type in listOf("pay", "camera")) {
+            val root = CardManagementSurface.createFunctions(RuntimeEnvironment.getApplication(), type)
+            CardManagementSurface.render(root, state(onlyOne = true).apply { putInt("minimum", 1); putInt("maximum", 1) })
+            assertFalse(root.findViewWithTag<MaterialSwitch>("function_toggle_pay").isEnabled)
+            assertFalse(root.findViewWithTag<MaterialSwitch>("function_toggle_camera").isEnabled)
+            assertEquals(View.GONE, root.findViewWithTag<View>("function_settings_pay").visibility)
+        }
+    }
+
     @Test fun dragDropOnlyAcceptsThisPagesCurrentLocalCard() {
         val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
         val root = CardManagementSurface.create(activity); val events = mutableListOf<Bundle>()

@@ -44,6 +44,9 @@
         <activity android:name=".GestureAreaActivity" android:exported="true" />
         <activity android:name=".HostToolsActivity" android:exported="false" />
         <activity android:name=".CardManagementActivity" android:exported="false" />
+        <activity android:name=".CardFunctionSettingsActivity" android:exported="false" />
+        <activity-alias android:name="com.vivo.card.setting.CardEditActivity"
+            android:targetActivity=".CardFunctionSettingsActivity" android:exported="true" />
         <activity-alias android:name="com.vivo.card.setting.CardSettingActivity"
             android:targetActivity=".CardManagementActivity" android:exported="true" />
         <activity android:name=".MemoryPhotoActivity" android:exported="true"
