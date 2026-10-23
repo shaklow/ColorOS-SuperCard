@@ -12,6 +12,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.ImageButton
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.materialswitch.MaterialSwitch
 import org.junit.Assert.*
@@ -126,14 +127,22 @@ class CardManagementSurfaceTest {
                 root.layout(0, 0, width, height)
                 assertTrue(descendants(root).all { it.width <= width })
                 for (type in types) for (name in listOf("drag_$type", "up_$type", "down_$type")) {
-                    val button = root.named<MaterialButton>(name)
-                    assertNotNull(button.icon); assertTrue(button.width >= 48 * density)
+                    val button = root.named<ImageButton>(name)
+                    assertNotNull(button.drawable); assertTrue(button.width >= 48 * density)
                     assertTrue(button.contentDescription.isNotBlank())
-                    assertTrue(button.iconSize + button.paddingStart + button.paddingEnd <= button.width)
+                    assertTrue(button.drawable.bounds.width() > 0)
+                    val icon = Bitmap.createBitmap(button.width, button.height, Bitmap.Config.ARGB_8888)
+                    button.draw(Canvas(icon))
+                    assertTrue("Reorder icon must produce visible pixels: $name", (0 until icon.width).any { x ->
+                        (0 until icon.height).any { y -> android.graphics.Color.alpha(icon.getPixel(x, y)) > 0 }
+                    })
+                    icon.recycle()
                 }
                 for (type in listOf("pay", "camera", "dhu", "staging")) {
                     val button = root.named<MaterialButton>("settings_$type")
                     assertTrue(button.width > 0 && button.height >= 48 * density)
+                    assertEquals(1, button.layout.lineCount)
+                    assertTrue(button.paint.measureText(button.text.toString()) <= button.width - button.paddingLeft - button.paddingRight)
                     assertTrue(button.layout?.getEllipsisCount(0) == 0)
                 }
                 System.getenv("SUPERCARD_PREVIEW_DIR")?.let { directory ->

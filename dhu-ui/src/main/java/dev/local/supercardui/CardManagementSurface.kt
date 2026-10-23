@@ -13,6 +13,7 @@ import android.view.WindowInsets
 import android.widget.*
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.appcompat.view.ContextThemeWrapper
+import androidx.appcompat.widget.AppCompatImageButton
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
@@ -131,7 +132,10 @@ object CardManagementSurface {
             private val down = iconButton(R.drawable.management_ic_down, "down_$type")
             private val settings = button(when (type) {
                 "dhu" -> "授权设置"; "staging" -> "管理卡券"; else -> "功能设置"
-            }, "settings_$type")
+            }, "settings_$type").apply {
+                setPadding(dp(8), paddingTop, dp(8), paddingBottom)
+                minWidth = 0; minimumWidth = 0; isSingleLine = true
+            }
             val card: MaterialCardView
 
             init {
@@ -223,10 +227,13 @@ object CardManagementSurface {
             "dhu" -> "东华校园卡付款码与授权设置"
             else -> "保留现有卡片配置"
         }
-        private fun iconButton(drawable: Int, name: String) = MaterialButton(context, null, androidx.appcompat.R.attr.borderlessButtonStyle).apply {
-            tag = key(name); icon = AppCompatResources.getDrawable(context, drawable); iconSize = dp(22)
-            iconPadding = 0; insetTop = 0; insetBottom = 0; minWidth = 0; minimumWidth = 0
-            setPadding(dp(12), 0, dp(12), 0); cornerRadius = dp(24)
+        private fun iconButton(drawable: Int, name: String) = AppCompatImageButton(context, null, androidx.appcompat.R.attr.borderlessButtonStyle).apply {
+            tag = key(name); setImageDrawable(AppCompatResources.getDrawable(context, drawable))
+            val tint = color(com.google.android.material.R.attr.colorOnSurfaceVariant)
+            imageTintList = ColorStateList(arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()),
+                intArrayOf((tint and 0x00ffffff) or (0x61 shl 24), tint))
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            minimumWidth = dp(48); minimumHeight = dp(48); setPadding(dp(12), dp(12), dp(12), dp(12))
         }
         private fun button(label: String, name: String) = MaterialButton(context, null, androidx.appcompat.R.attr.borderlessButtonStyle).apply {
             tag = key(name); text = label; isAllCaps = false; minimumHeight = dp(48); maxLines = 3
