@@ -2,9 +2,6 @@ package dev.local.supercardhost;
 
 import android.app.Application;
 import android.app.Instrumentation;
-import android.content.Context;
-import android.os.Handler;
-import android.os.Looper;
 import android.util.Log;
 
 import java.lang.reflect.Method;
@@ -22,7 +19,6 @@ public final class VectorEntry extends XposedModule {
     private static final String SYSTEM_UI = "com.android.systemui";
     private static final String MODULE_PACKAGE = "dev.local.supercardhost";
     private final AtomicBoolean hookInstalled = new AtomicBoolean();
-    private final AtomicBoolean startupScheduled = new AtomicBoolean();
 
     @Override
     public void onPackageReady(PackageReadyParam param) {
@@ -86,22 +82,6 @@ public final class VectorEntry extends XposedModule {
     }
 
     private void scheduleStartup(Application application) {
-        if (!SYSTEM_UI.equals(application.getPackageName())) return;
-        if (!startupScheduled.compareAndSet(false, true)) return;
-
-        Handler mainHandler = new Handler(Looper.getMainLooper());
-        if (!mainHandler.post(() -> {
-            try {
-                Context moduleContext = application.createPackageContext(
-                        MODULE_PACKAGE, Context.CONTEXT_IGNORE_SECURITY);
-                PluginRuntime.start(application, moduleContext);
-                Log.i(TAG, "Card runtime started in SystemUI");
-            } catch (Throwable error) {
-                Log.e(TAG, "Card runtime startup failed", error);
-            }
-        })) {
-            startupScheduled.set(false);
-            Log.e(TAG, "SystemUI main thread rejected card runtime startup");
-        }
+        RuntimeBootstrap.schedule(application);
     }
 }
