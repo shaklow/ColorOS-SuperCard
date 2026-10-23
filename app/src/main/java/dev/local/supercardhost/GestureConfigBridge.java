@@ -187,13 +187,7 @@ public final class GestureConfigBridge {
         if (display == null) throw new IllegalStateException("Missing default display");
         DisplayMetrics metrics = new DisplayMetrics();
         display.getRealMetrics(metrics);
-        return new Policy(Settings.Secure.getInt(resolver, TOTAL, 1) == 1,
-                Settings.Secure.getString(resolver, SIDE), Settings.Secure.getString(resolver, RANGE),
-                Settings.Secure.getInt(resolver, LOCK, 0) == 1,
-                Settings.Secure.getInt(resolver, LOCK_STYLE, 0),
-                Settings.Secure.getInt(resolver, REST, 0) == 1,
-                Settings.Secure.getInt(resolver, REST_STYLE, 0),
-                keyguard.isKeyguardLocked(), power.isInteractive(), metrics);
+        return new Policy(GesturePolicyAdapter.read(application, metrics, keyguard.isKeyguardLocked(), power.isInteractive()));
     }
 
     private static void apply(Object helper, Policy next, boolean force) throws Exception {
@@ -286,48 +280,18 @@ public final class GestureConfigBridge {
         final Rect navigationRegion = new Rect();
         final Rect region = new Rect();
 
-        Policy(boolean total, String side, String range, boolean lockSwitch, int lockStyle,
-               boolean restSwitch, int restStyle, boolean locked, boolean interactive, DisplayMetrics metrics) {
-            this.total = total;
-            this.side = side == null || side.isEmpty() ? GestureSettingsRules.DEFAULT_SIDE : side;
-            this.range = range;
-            this.lockSwitch = lockSwitch;
-            this.lockStyle = lockStyle;
-            this.restSwitch = restSwitch;
-            this.restStyle = restStyle;
-            this.locked = locked;
-            this.interactive = interactive;
-            width = metrics.widthPixels;
-            height = metrics.heightPixels;
-            if (width <= 0 || height <= 0 || !Float.isFinite(metrics.density) || metrics.density <= 0)
-                throw new IllegalArgumentException("Invalid physical display metrics");
-            edge = GestureSettingsRules.edge(width, metrics.density);
+        // Android and original-ABI projection of an immutable Kotlin decision.
+        Policy(GesturePolicy.Decision next) {
+            GesturePolicy.Settings settings = next.settings;
+            total = settings.getTotal(); side = settings.getSide(); range = settings.getRange();
+            lockSwitch = settings.getLockSwitch(); lockStyle = settings.getLockStyle();
+            restSwitch = settings.getRestSwitch(); restStyle = settings.getRestStyle();
+            locked = next.screen.getLocked(); interactive = next.screen.getInteractive();
+            width = next.display.getWidth(); height = next.display.getHeight(); edge = next.edge; branch = next.branch;
             rangeValues = GestureSettingsRules.parseRange(range);
-            GestureSettingsRules.Pixels pixels = GestureSettingsRules.project(rangeValues, width, height);
-            if (pixels != null) navigationRegion.set(width - edge, pixels.top, width, pixels.bottom);
-            boolean tokenEnabled = GestureSettingsRules.sideEnabled(this.side);
-            navigationEnabled = tokenEnabled && !navigationRegion.isEmpty();
-            branch = !interactive ? 2 : locked ? 1 : 0;
-            lockEnabled = total && branch == 1 && lockSwitch && styleEnabled(lockStyle);
-            restEnabled = total && branch == 2 && restSwitch && styleEnabled(restStyle);
-            if (!total) return;
-            if (branch == 0) {
-                if (navigationEnabled) region.set(navigationRegion);
-            } else if (lockEnabled) {
-                setStyleRegion(lockStyle);
-            } else if (restEnabled) {
-                setStyleRegion(restStyle);
-            }
-        }
-
-        private boolean styleEnabled(int style) {
-            return style == 1 || style == 3 || (style == 2 && navigationEnabled);
-        }
-
-        private void setStyleRegion(int style) {
-            if (style == 1) region.set(width - edge, 0, width, height);
-            else if (style == 2) region.set(navigationRegion);
-            else if (style == 3) region.set(width - edge, height * 2 / 3, width, height);
+            navigationEnabled = next.navigationEnabled; lockEnabled = next.lockEnabled; restEnabled = next.restEnabled;
+            navigationRegion.set(GesturePolicyAdapter.rect(next.navigationRegion));
+            region.set(GesturePolicyAdapter.rect(next.region));
         }
 
         boolean sameSettings(Policy other) {

@@ -264,30 +264,11 @@ public final class GestureHandle {
             return new Snapshot(eligible, false, locked, true, activePreview.opacity,
                     width, end - start, start, metrics.widthPixels, metrics.heightPixels, metrics.density);
         }
-        boolean total = Settings.Secure.getInt(resolver, TOTAL, 1) == 1;
         boolean visible = Settings.Secure.getInt(resolver, VISIBLE, 1) == 1;
         boolean autoHide = Settings.Secure.getInt(resolver, AUTO_HIDE, 1) == 1;
         float opacity = GestureSettingsRules.opacity(Settings.Secure.getInt(resolver, OPACITY, GestureSettingsRules.DEFAULT_OPACITY_PERCENT));
-        Rect navigation = navigationRegion(Settings.Secure.getString(resolver, RANGE), metrics);
-        String side = Settings.Secure.getString(resolver, SIDE);
-        boolean sideEnabled = GestureSettingsRules.sideEnabled(side);
-        boolean navigationEnabled = sideEnabled && !navigation.isEmpty();
-        Rect selected = new Rect();
-        if (total && visible && power.isInteractive()) {
-            if (!locked) {
-                if (navigationEnabled) selected.set(navigation);
-            } else if (Settings.Secure.getInt(resolver, LOCK, 0) == 1) {
-                // Match GestureConfigBridge: style 1/3 are independent of the
-                // unlocked switch; style 2 follows the unlocked active region.
-                int style = Settings.Secure.getInt(resolver, LOCK_STYLE, 0);
-                int edge = GestureSettingsRules.edge(metrics.widthPixels, metrics.density);
-                if (style == 1) selected.set(metrics.widthPixels - edge, 0,
-                        metrics.widthPixels, metrics.heightPixels);
-                else if (style == 2 && navigationEnabled) selected.set(navigation);
-                else if (style == 3) selected.set(metrics.widthPixels - edge,
-                        metrics.heightPixels * 2 / 3, metrics.widthPixels, metrics.heightPixels);
-            }
-        }
+        GesturePolicy.Decision decision = GesturePolicyAdapter.read(application, metrics, locked, power.isInteractive());
+        Rect selected = GesturePolicyAdapter.rect(decision.hintRegion(visible, false));
         boolean eligible = !selected.isEmpty() && !isCardShown();
         int height = selected.height();
         int top = selected.top;
