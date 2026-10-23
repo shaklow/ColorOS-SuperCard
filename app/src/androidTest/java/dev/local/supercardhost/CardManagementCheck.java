@@ -18,6 +18,8 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import java.io.FileInputStream;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -57,7 +59,7 @@ final class CardManagementCheck {
             main(() -> named(current, "up_camera").performClick());
             await(() -> order("pay", "memory", "camera", "staging", "dhu") && ready(current, "down_pay"), "Up arrow did not persist order");
             drag(current, "pay", "memory");
-            await(() -> order("memory", "pay", "camera", "staging", "dhu") && ready(current, "down_pay"), "Drag/drop did not persist order");
+            await(() -> order("memory", "pay", "camera", "staging", "dhu") && ready(current, "down_pay"), "Drag/drop did not persist order: " + json());
             JSONObject saved = json();
             if (saved.getJSONObject("future").getInt("keep") != 17) throw new AssertionError("Unknown root data was lost");
             JSONObject pay = card("pay"), camera = card("camera");
@@ -91,14 +93,29 @@ final class CardManagementCheck {
     }
 
     private void drag(Activity page, String source, String target) throws Exception {
+        await(() -> onMain(() -> page.hasWindowFocus()) && ready(page, "drag_" + source),
+                "Management window was not ready for physical input");
         int[] from = new int[2], to = new int[2];
+        CountDownLatch laidOut = new CountDownLatch(1);
         main(() -> {
             ScrollView scroll = (ScrollView) named(page, "scroll");
             int[] location = new int[2]; named(page, "card_" + source).getLocationOnScreen(location);
             scroll.scrollBy(0, location[1] - Math.round(100 * page.getResources().getDisplayMetrics().density));
+            scroll.postOnAnimation(() -> scroll.postOnAnimation(laidOut::countDown));
         });
+        if (!laidOut.await(5, TimeUnit.SECONDS)) throw new AssertionError("Management scroll did not settle");
         test.waitForIdleSync();
-        main(() -> { center(named(page, "drag_" + source), from); center(named(page, "card_" + target), to); });
+        main(() -> {
+            View grip = named(page, "drag_" + source);
+            if (!grip.isShown() || !grip.isEnabled() || !grip.isLongClickable() || !grip.hasWindowFocus())
+                throw new AssertionError("Drag handle is not interactive");
+            grip.setOnTouchListener((view, event) -> {
+                android.util.Log.i("CardManagementCheck", "handle input=" + event.getActionMasked() + " enabled=" + view.isEnabled());
+                return false;
+            });
+            center(grip, from); center(named(page, "card_" + target), to);
+            android.util.Log.i("CardManagementCheck", "drag " + from[0] + "," + from[1] + " to " + to[0] + "," + to[1]);
+        });
         long down = SystemClock.uptimeMillis();
         pointer(down, MotionEvent.ACTION_DOWN, from[0], from[1]);
         SystemClock.sleep(ViewConfiguration.getLongPressTimeout() + 200L);

@@ -230,6 +230,7 @@ object CardManagementSurface {
         }
         private fun iconButton(drawable: Int, name: String) = AppCompatImageButton(context, null, 0).apply {
             tag = key(name); setImageDrawable(AppCompatResources.getDrawable(context, drawable))
+            isClickable = true; isFocusable = true
             val tint = color(com.google.android.material.R.attr.colorOnSurfaceVariant)
             imageTintList = ColorStateList(arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()),
                 intArrayOf((tint and 0x00ffffff) or (0x61 shl 24), tint))
