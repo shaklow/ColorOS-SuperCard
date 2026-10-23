@@ -103,7 +103,7 @@ object GestureSettingsSurface {
                     setLabelFormatter { value ->
                         val fraction = value / 1000
                         val percentage = when (name) {
-                            "length" -> (.0401f + fraction * .9599f) * 100
+                            "length" -> (minimumLength() + fraction * (1 - minimumLength())) * 100
                             "position" -> fraction * (1 - this@Page.values.getFloat("bottom", .98f) + this@Page.values.getFloat("top", .76f)) * 100
                             else -> fraction * 100
                         }
@@ -179,6 +179,8 @@ object GestureSettingsSurface {
         }
         private fun emit(name: String, data: Bundle.() -> Unit = {}) { action?.accept(Bundle().apply { putString("action", name); data() }) }
 
+        private fun minimumLength() = values.getFloat("minimumLength", .0401f)
+
         private inner class PhonePreview : View(context) {
             private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
             private var mode = -1
@@ -212,8 +214,8 @@ object GestureSettingsSurface {
                     MotionEvent.ACTION_MOVE -> {
                         if (mode < 0) return false
                         val length = bottom - top
-                        val start = when (mode) { 1 -> y.coerceIn(0f, (bottom - .0401f).coerceAtLeast(0f)); 2 -> top; else -> (y - offset).coerceIn(0f, (1 - length).coerceAtLeast(0f)) }
-                        val end = if (mode == 2) y.coerceIn((top + .0401f).coerceAtMost(1f), 1f) else if (mode == 1) bottom else start + length
+                        val start = when (mode) { 1 -> y.coerceIn(0f, (bottom - minimumLength()).coerceAtLeast(0f)); 2 -> top; else -> (y - offset).coerceIn(0f, (1 - length).coerceAtLeast(0f)) }
+                        val end = if (mode == 2) y.coerceIn((top + minimumLength()).coerceAtMost(1f), 1f) else if (mode == 1) bottom else start + length
                         emit("range") { putFloat("top", start); putFloat("bottom", end) }; return true
                     }
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {

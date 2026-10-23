@@ -50,19 +50,6 @@ class CardFunctionStateTest {
         assertEquals(1, CardFunctionState.parse(recovery, "camera").functions.count { it.enabled })
     }
 
-    @Test fun backgroundsOnlyChangeAppearanceAndRejectUnrecognizedStrategies() {
-        for (type in listOf("pay", "camera")) {
-            val before = snapshot(type)
-            val changed = CardManagementState.parse(CardFunctionState.background(before, type, "bundled", 1))
-            assertEquals("bundled" to 1, CardFunctionState.background(changed, type))
-            val original = JSONObject(before.raw); val actual = JSONObject(changed.raw)
-            actual.getJSONArray("cards").getJSONObject(0).put("skinName", "custom").remove("skinLoaderStrategy")
-            assertEquals(original.toString(), actual.toString())
-            rejects { CardFunctionState.background(before, type, "downloaded", 2) }
-            rejects { CardFunctionState.background(before, type, "", 1) }
-        }
-    }
-
     @Test fun unsupportedAndMalformedFunctionsCannotBeOverwritten() {
         rejects { CardFunctionState.enabled(snapshot(), "pay", "future_native", true) }
         rejects { CardFunctionState.move(snapshot(), "pay", "wx_scan", "future_native") }

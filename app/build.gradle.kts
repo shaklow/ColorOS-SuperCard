@@ -37,6 +37,8 @@ dependencies {
     implementation("org.luckypray:dexkit:2.0.7")
     // Supplied by Vector in scoped processes; do not bundle framework API classes.
     compileOnly("io.github.libxposed:api:102.0.0")
+    // Runtime region tests load the adapter methods; production still receives this API from Vector.
+    testRuntimeOnly("io.github.libxposed:api:102.0.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.16.1")
 }

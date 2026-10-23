@@ -13,7 +13,7 @@ import io.github.libxposed.api.XposedModule;
 /** Defaults for settings owned by the card adapter, including absent fresh-install geometry. */
 public final class HostSettingsDefaults {
     private static final String TAG = "SuperCardDefaults";
-    private static final String RANGE = "navigation_slide_card_range";
+    private static final String RANGE = GestureSettingsRules.RANGE_KEY;
     private static final Set<ClassLoader> INSTALLED = Collections.newSetFromMap(new WeakHashMap<>());
 
     private HostSettingsDefaults() {}
