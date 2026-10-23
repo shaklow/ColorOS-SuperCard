@@ -25,6 +25,7 @@ def verify_archive(host_apk):
                            b'Ldev/local/supercardui/PayCardAppearance;',
                            b'Ldev/local/supercardui/PayIdleArtwork;',
                            b'Ldev/local/supercardui/CardDesign;',
+                           b'Ldev/local/supercardui/NativeCardSurface;',
                            b'Ldev/local/supercardui/CardIconButton;',
                            b'Lcom/google/android/material/button/MaterialButton;',
                            b'Lcom/google/android/material/appbar/MaterialToolbar;',

@@ -286,6 +286,7 @@ public final class GestureHandle {
     }
 
     private static boolean isCardShown() throws Exception {
+        if (NativeCardRuntime.isShowing()) return true;
         Object region = regionInstance == null ? null : regionInstance.get(null);
         if (region != null && Boolean.TRUE.equals(regionCardShown.invoke(region))) return true;
         Object impl = field(originalPlugin, "cardServiceImpl");

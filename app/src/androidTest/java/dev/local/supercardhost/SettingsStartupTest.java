@@ -36,7 +36,11 @@ import java.util.function.BiConsumer;
 
 /** Installed unified APK: settings startup and private M3E content in a non-Activity window. */
 public final class SettingsStartupTest extends Instrumentation {
-    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); start(); }
+    private boolean secureNative;
+    @Override public void onCreate(Bundle arguments) {
+        secureNative = arguments != null && "true".equals(arguments.getString("secureNative"));
+        super.onCreate(arguments); start();
+    }
 
     @Override public void onStart() {
         Bundle result = new Bundle();
@@ -49,7 +53,12 @@ public final class SettingsStartupTest extends Instrumentation {
             new GestureSettingsCheck(this).run();
             checkFloatingWindow();
             checkFloatingSessions();
-            result.putString("stream", "Settings startup: 4 entry points passed\nCard management: persistence, ordering and legacy entry passed\nGesture settings: session, preview ownership and new page passed\nFloating cards: window embedding passed\nFloating lifecycle: detach/reattach passed\nLens display: embedded activity and touch passed\nRoot display: callback wrapper passed\n");
+            try (NativeCoreCheck nativeCore = new NativeCoreCheck(this)) {
+                nativeCore.run();
+                checkLensDisplay(nativeCore.container());
+            }
+            result.putString("stream", "Settings startup: 4 entry points passed\nCard management: persistence, ordering and legacy entry passed\nGesture settings: session, preview ownership and new page passed\nFloating cards: window embedding passed\nFloating lifecycle: detach/reattach passed\nLens display: embedded activity and touch passed\nRoot display: callback wrapper passed\nNative core: secure window, switching and lock cleanup passed\n"
+                    + (secureNative ? "Secure native display: actual secure secondary display and touch passed\n" : ""));
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
             result.putString("stream", android.util.Log.getStackTraceString(error));
@@ -180,9 +189,15 @@ public final class SettingsStartupTest extends Instrumentation {
         Activity activity = null;
         ActivityMonitor monitor = addMonitor(target.getPackageName() + ".HostActivity", null, false);
         getUiAutomation().adoptShellPermissionIdentity();
+        boolean securePermissionOverridden = false;
         try {
             target.getClassLoader().loadClass("org.lsposed.hiddenapibypass.HiddenApiBypass")
                     .getMethod("addHiddenApiExemptions", String[].class).invoke(null, (Object) new String[]{"Landroid/"});
+            if (secureNative) {
+                getUiAutomation().getClass().getMethod("addOverridePermissionState", int.class, String.class, int.class)
+                        .invoke(getUiAutomation(), android.os.Process.myUid(), "android.permission.CAPTURE_SECURE_VIDEO_OUTPUT", 0);
+                securePermissionOverridden = true;
+            }
             main(() -> {
                 TextureView view = new TextureView(card.getContext()); texture.set(view);
                 card.addView(view, new FrameLayout.LayoutParams(-1, -1));
@@ -193,13 +208,15 @@ public final class SettingsStartupTest extends Instrumentation {
                 if (!view.isAvailable()) throw new AssertionError("Lens texture unavailable");
                 view.getSurfaceTexture().setDefaultBufferSize(600, 900);
                 Surface surface = new Surface(view.getSurfaceTexture()); output.set(surface);
-                // Use the production touch/focus/group/rotation/removal policy, without
-                // SECURE. Secure root creation remains a separate target-ROM boundary.
+                // Root-connected CI automation grants only this test UID a temporary secure-display override.
+                // Production permissions and the root daemon protocol remain untouched.
                 display.set(target.getSystemService(DisplayManager.class).createVirtualDisplay(
-                        "SuperCard_Lens_Test", 600, 900, 240, surface, 19917 & ~DisplayManager.VIRTUAL_DISPLAY_FLAG_SECURE));
+                        "SuperCard_Lens_Test", 600, 900, 240, surface, secureNative ? 19917 : 19917 & ~DisplayManager.VIRTUAL_DISPLAY_FLAG_SECURE));
             });
             int id = display.get().getDisplay().getDisplayId();
             if (id <= 0) throw new AssertionError("Lens selected the main display");
+            if (secureNative && (display.get().getDisplay().getFlags() & android.view.Display.FLAG_SECURE) == 0)
+                throw new AssertionError("Native display lost its secure flag");
             checkRootDisplayWrapper(target, output.get(), display.get());
             Class<?> backendType = target.getClassLoader().loadClass(target.getPackageName() + ".LensDisplayBackend");
             Object backend = backendType.getConstructor(Context.class).newInstance(target);
@@ -255,7 +272,13 @@ public final class SettingsStartupTest extends Instrumentation {
                         if (texture.get() != null) card.removeView(texture.get());
                     }
                 });
-            } finally { removeMonitor(monitor); getUiAutomation().dropShellPermissionIdentity(); }
+            } finally {
+                try {
+                    if (securePermissionOverridden) getUiAutomation().getClass()
+                            .getMethod("removeOverridePermissionState", int.class, String.class)
+                            .invoke(getUiAutomation(), android.os.Process.myUid(), "android.permission.CAPTURE_SECURE_VIDEO_OUTPUT");
+                } finally { removeMonitor(monitor); getUiAutomation().dropShellPermissionIdentity(); }
+            }
         }
     }
 
@@ -274,7 +297,7 @@ public final class SettingsStartupTest extends Instrumentation {
         Method wrap = wrapper.getDeclaredMethod("wrap", String.class, int.class, int.class, int.class,
                 Surface.class, int.class, tokenType); wrap.setAccessible(true);
         VirtualDisplay result = (VirtualDisplay) wrap.invoke(null, "SuperCard_Lens_Test", 600, 900, 240,
-                surface, 19917 & ~DisplayManager.VIRTUAL_DISPLAY_FLAG_SECURE, token);
+                surface, secureNative ? 19917 : 19917 & ~DisplayManager.VIRTUAL_DISPLAY_FLAG_SECURE, token);
         if (result == null || result.getDisplay().getDisplayId() != id)
             throw new AssertionError("Root callback wrapper changed the display");
         // Both wrappers refer to the same callback. The original owner releases it in finally.
