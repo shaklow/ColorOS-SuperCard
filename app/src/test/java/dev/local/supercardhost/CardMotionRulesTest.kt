@@ -4,6 +4,23 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CardMotionRulesTest {
+    @Test fun liveStackCoversThePanelInBothDirectionsAtEveryIntermediateFrame() {
+        for (density in listOf(.75f, 1f, 2f, 3.5f)) for (direction in listOf(-1, 1)) {
+            val width = 280 * density
+            for (step in 0..1000) {
+                val p = step / 1000f
+                val frame = CardMotionRules.pageFrame(-direction * width * p, width, direction, density)
+                fun bounds(pose: CardMotionRules.Pose) = (pose.x + width * (1 - pose.scale) / 2) to
+                    (pose.x + width * (1 + pose.scale) / 2)
+                val a = bounds(frame.outgoing); val b = bounds(frame.incoming)
+                val left = if (a.first <= b.first) a else b; val right = if (a.first <= b.first) b else a
+                assertTrue("No exposed leading edge at $direction/$p", left.first <= .01f)
+                assertTrue("No gap between live pages at $direction/$p", left.second + .01f >= right.first)
+                assertTrue("No exposed trailing edge at $direction/$p", maxOf(left.second, right.second) + .01f >= width)
+            }
+            assertEquals(0f, CardMotionRules.pageFrame(-direction * width, width, direction, density).incoming.x, .001f)
+        }
+    }
     @Test fun edgeMatchesOriginalDistanceVelocityAndReverseFlingRulesAtEveryDensity() {
         for (density in listOf(.75f, 1f, 2f, 3.5f)) {
             fun edge(distance: Float, velocity: Float, locked: Boolean = false) =

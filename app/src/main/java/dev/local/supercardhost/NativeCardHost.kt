@@ -15,7 +15,6 @@ import android.view.WindowManager
 import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import java.util.function.Consumer
-import kotlin.math.abs
 
 /** Owns a secure card window, live page transitions and follow-finger entrance. */
 internal class NativeCardHost(private val context: Context, private val type: Int = 2009,
@@ -180,7 +179,7 @@ internal class NativeCardHost(private val context: Context, private val type: In
             try {
                 preview = createFresh(target)
                 preview!!.view.translationX = direction * panelWidth()
-                body.addView(preview!!.view, FrameLayout.LayoutParams(-1, -1))
+                body.addView(preview!!.view, if (direction > 0) 0 else body.childCount, FrameLayout.LayoutParams(-1, -1))
             } catch (error: Throwable) { dropPreview(); throw error }
         }
     }
@@ -233,13 +232,13 @@ internal class NativeCardHost(private val context: Context, private val type: In
         animatePage(old, next, direction, from, velocity)
     }
     private fun renderSwipe(old: Content, next: Content?, distance: Float, direction: Int) {
-        val progress = (abs(distance) / panelWidth()).coerceIn(0f, 1f)
-        old.view.translationX = distance
-        old.view.scaleX = 1f - .04f * progress; old.view.scaleY = old.view.scaleX
-        old.view.alpha = 1f - .2f * progress
+        val frame = CardMotionRules.pageFrame(distance, panelWidth(), if (direction == 0) 1 else direction, density())
+        old.view.translationX = frame.outgoing.x
+        old.view.scaleX = frame.outgoing.scale; old.view.scaleY = old.view.scaleX
+        old.view.alpha = 1f
         next?.view?.let {
-            it.translationX = distance + direction * panelWidth()
-            it.scaleX = .96f + .04f * progress; it.scaleY = it.scaleX; it.alpha = .8f + .2f * progress
+            it.translationX = frame.incoming.x
+            it.scaleX = frame.incoming.scale; it.scaleY = it.scaleX; it.alpha = 1f
         }
     }
     private fun animatePage(old: Content, next: Content, direction: Int, from: Float, velocity: Float) {

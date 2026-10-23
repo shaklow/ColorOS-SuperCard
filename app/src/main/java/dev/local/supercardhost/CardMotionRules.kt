@@ -4,6 +4,17 @@ import kotlin.math.abs
 
 /** Distance/velocity rules use dp, matching the original edge gesture's 120/150dp and 300dp/s. */
 internal object CardMotionRules {
+    data class Pose(val x: Float, val scale: Float)
+    data class PageFrame(val outgoing: Pose, val incoming: Pose)
+    fun pageFrame(distance: Float, width: Float, direction: Int, density: Float): PageFrame {
+        require(distance.isFinite() && width.isFinite() && width > 0 && density.isFinite() && density > 0)
+        require(direction == 1 || direction == -1)
+        val progress = (abs(distance) / width).coerceIn(0f, 1f)
+        val outgoing = Pose(if (direction > 0) distance else 12 * density * progress, 1f - .04f * progress)
+        val incoming = if (direction > 0) Pose(12 * density * (1f - progress), .96f + .04f * progress)
+            else Pose(distance - width, 1f)
+        return PageFrame(outgoing, incoming)
+    }
     fun edgeCommit(distance: Float, velocityX: Float, locked: Boolean, density: Float): Boolean {
         if (!distance.isFinite() || !velocityX.isFinite() || !density.isFinite() || density <= 0) return false
         return if (abs(velocityX) > 300 * density) velocityX < 0
