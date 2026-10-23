@@ -12,5 +12,13 @@ internal object NativeGestureCompatibility {
         module.hook(touch).intercept { chain ->
             if (NativeCardRuntime.ownsGesture()) false else chain.proceed()
         }
+        // Explicit original-card requests hand window ownership back before the old runtime opens.
+        val trigger = loader.loadClass("com.vivo.card.service.CardServiceImpl").getDeclaredMethod(
+            "onCardTriggerIntent", String::class.java, String::class.java, Int::class.javaPrimitiveType, String::class.java)
+        trigger.isAccessible = true
+        module.hook(trigger).intercept { chain ->
+            NativeCardRuntime.useLegacy()
+            chain.proceed()
+        }
     }
 }

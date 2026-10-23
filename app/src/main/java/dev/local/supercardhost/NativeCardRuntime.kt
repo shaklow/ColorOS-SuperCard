@@ -29,6 +29,23 @@ internal object NativeCardRuntime {
     private enum class Mode { AUTO, NATIVE, LEGACY }
     private var mode = Mode.AUTO
     @Volatile private var inputEnabled = false
+    private var warmQueued = false
+    private fun warmSurface() {
+        if (warmQueued) return
+        warmQueued = true
+        main.looper.queue.addIdleHandler {
+            warmQueued = false
+            val host = application
+            if (registered && host != null && input != null && window == null &&
+                host.getSystemService(PowerManager::class.java)?.isInteractive == true) try {
+                window = NativeCardHost(host, allowed = ::available)
+            } catch (error: Throwable) {
+                mode = Mode.LEGACY; inputEnabled = false
+                android.util.Log.w("SuperCardNative", "Cannot warm card surface", error)
+            }
+            false
+        }
+    }
     @JvmStatic fun ownsGesture() = inputEnabled
     private fun policy(): GesturePolicy.Decision {
         val host = checkNotNull(application)
@@ -51,7 +68,11 @@ internal object NativeCardRuntime {
         if (next && !previous) PluginRuntime.hide()
         if (!next && previous) hide()
     }
-    @JvmStatic fun useLegacy() { mode = Mode.LEGACY; inputEnabled = false; hide() }
+    @JvmStatic fun useLegacy() {
+        inputEnabled = false
+        if (Looper.myLooper() != Looper.getMainLooper()) { main.post { useLegacy() }; return }
+        mode = Mode.LEGACY; hide()
+    }
     private fun unlocked() = access?.unlocked() == true
     private fun available() = unlocked() && application?.let {
         Settings.Secure.getInt(it.contentResolver, "card_service_total_switch", 1) == 1
@@ -64,6 +85,10 @@ internal object NativeCardRuntime {
             override fun onReceive(context: Context, intent: Intent) {
                 syncRouting()
                 if (!unlocked() || intent.action == Intent.ACTION_CONFIGURATION_CHANGED) hide()
+                if (intent.action == Intent.ACTION_CONFIGURATION_CHANGED) {
+                    window?.close(); window = null
+                }
+                warmSurface()
             }
         }
         val observer = object : ContentObserver(main) {
@@ -113,6 +138,7 @@ internal object NativeCardRuntime {
                 })
             } catch (error: Throwable) { android.util.Log.e("SuperCardNativeInput", "Native gesture monitor unavailable", error) }
             syncRouting()
+            warmSurface()
         } catch (error: Throwable) {
             inputEnabled = false
             try { input?.close() } catch (cleanup: Throwable) { android.util.Log.w("SuperCardNativeInput", "Cannot roll back monitor", cleanup) }
