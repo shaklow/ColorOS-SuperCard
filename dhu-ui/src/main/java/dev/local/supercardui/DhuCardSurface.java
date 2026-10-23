@@ -34,6 +34,9 @@ public final class DhuCardSurface {
     public static void stylePay(Context resources, String part, View[] views) { PayCardAppearance.style(resources, part, views); }
 
     public static View createSettings(Context resources, String page) { return SettingsSurface.create(resources, page); }
+    public static View createGestureSettings(Context resources) { return GestureSettingsSurface.create(resources); }
+    public static void renderGestureSettings(View root, android.os.Bundle values) { GestureSettingsSurface.render(root, values); }
+    public static void bindGestureSettings(View root, java.util.function.Consumer<android.os.Bundle> action) { GestureSettingsSurface.bind(root, action); }
     public static View createCardManagement(Context resources) { return CardManagementSurface.create(resources); }
     public static View createCardFunctions(Context resources, String type) { return CardManagementSurface.createFunctions(resources, type); }
     public static void renderCardManagement(View root, android.os.Bundle state) { CardManagementSurface.render(root, state); }

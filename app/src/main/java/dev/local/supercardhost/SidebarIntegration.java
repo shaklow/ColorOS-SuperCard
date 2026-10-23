@@ -131,7 +131,6 @@ public final class SidebarIntegration {
     }
 
     private static Page addPage(Object fragment, UiApi api, boolean mainPage) throws Exception {
-        if (NativeFloatSettings.isCardPage(fragment)) return null;
         Object root = api.plan.method(fragment.getClass(), "a")
                 .invoke(fragment, mainPage ? "key_root" : "root_pfs");
         if (root == null) return null;
@@ -205,12 +204,12 @@ public final class SidebarIntegration {
                     });
             api.change.invoke(toggle, listener);
         }
-        if (area != null) setClick(api, area, page, SIDEBAR,
-                "com.oplus.smartsidebar.settings.FloatBarSettingsPhoneActivity");
+        if (area != null) setClick(api, area, page, "dev.local.supercardhost",
+                "dev.local.supercardhost.GestureAreaActivity");
         if (details != null) setClick(api, details, page, "dev.local.supercardhost",
                 "com.vivo.card.setting.CardSettingActivity");
-        if (fallback != null) setClick(api, fallback, page, SIDEBAR,
-                "com.oplus.smartsidebar.settings.FloatBarSettingsActivity");
+        if (fallback != null) setClick(api, fallback, page, "dev.local.supercardhost",
+                "dev.local.supercardhost.GestureAreaActivity");
         return page;
     }
 
@@ -225,12 +224,6 @@ public final class SidebarIntegration {
                             Context context = page.context.get();
                             if (context != null) {
                                 Intent intent = new Intent().setClassName(packageName, className);
-                                if (className.equals("com.oplus.smartsidebar.settings.FloatBarSettingsPhoneActivity")
-                                        || className.equals("com.oplus.smartsidebar.settings.FloatBarSettingsActivity")) {
-                                    intent.putExtra("dev.local.supercardhost.CARD_FLOATBAR_MODE", true);
-                                    if (!NativeFloatSettings.isReady()) intent.setClassName("dev.local.supercardhost",
-                                            "dev.local.supercardhost.GestureAreaActivity");
-                                }
                                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                                 context.startActivity(intent);
                             }

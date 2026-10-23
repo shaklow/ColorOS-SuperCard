@@ -1,6 +1,6 @@
 # M3 Expressive 设置界面
 
-第一阶段统一设置首页、运行状态与 PAY 设置、校园卡授权设置。设置首页使用 `HostActivity`（桌面、LSPosed 的 `MODULE_SETTINGS` 入口及卡片右上角设置），首页可唤出原悬浮卡片，见 [悬浮卡片改造](native-cards.md)；“管理卡片”自 0.2.23 起使用 [Material 管理页](card-management.md)，保留原卡片配置与功能编辑入口，“手势与唤出”保留现有手势设置。其他卡片的重绘不在本阶段内。
+设置首页使用 `HostActivity`（桌面、LSPosed 的 `MODULE_SETTINGS` 入口及卡片右上角设置），首页可唤出原悬浮卡片。首页、运行状态与 PAY、校园卡授权、卡片管理和支付/LENS 功能设置均使用私有 Material 界面。0.2.25 的“手势与唤出”也使用应用内的新页面，旧浮标设置页与混淆控件适配已删除，见 [手势设置](gesture-settings.md)。
 
 ## 设计规范
 

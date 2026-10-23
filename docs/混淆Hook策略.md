@@ -124,30 +124,13 @@
 
 `EmbeddedMemoryCamera.java` 的小窗拍照使用 Camera2，不依赖 ColorOS 相机混淆类；它仍依赖设备 HAL 与公开相机能力的正确行为。
 
-## 6. 智能侧边栏：短名回退与原生页面开放门槛
+## 6. 智能侧边栏：只保留设置入口适配
 
-文件：`SidebarIntegration.java`、`NativeFloatSettings.java`、`SidebarDexResolver.java`。
+0.2.25 删除 `NativeFloatSettings`、旧浮标页面及其混淆控件/配置代理/Fragment 事务链适配。卡包的浮标与手势设置统一到应用内 Material 页面，详见 [手势设置](gesture-settings.md)。不再以原生页面 readiness 决定入口，也不再拦截原侧边栏的浮标配置写入。
 
-复用目标 APK 自己的 Fragment、COUI Preference、资源与主题。完整签名的已知名称优先，失配后才建立短生命周期 DexKit 会话；只保存解析后的 Method/Field，不保留 native bridge。主要覆盖：
+`SidebarIntegration` 与 `SidebarDexResolver` 只负责在侧边栏原设置中添加卡包开关和入口。保留主页 Fragment、Preference 查找/添加/摘要、标题/顺序/可见性、字段及监听契约的完整签名和唯一 DexKit 回退。设置入口直接打开模块的管理页或手势页，普通侧边栏配置保持自己的行为。
 
-- 主页类 `i`：以 `EdgePanelSettingsFragment/key_root/key_toggle` 字符串和 Fragment 继承关系定位；`X(boolean)` 用 `updatePreferences/key_panel_category/key_style_category` 定位。
-- Preference 查找、添加、摘要：用异常/日志字符串与完整签名定位；标题排除已定位的摘要方法，顺序从原添加方法的调用关系取得，可见性按 final 方法的完整签名定位。
-- `s/y` 字段：失配后从原 find→getKey 的字段读取，以及 persistBoolean→shouldPersist→纯字段 getter 链定位。监听接口从真实 Preference 字段的唯一接口契约推导，回调不再依赖 `a/b` 名称。
-- 配置代理：以真实 Secure key、public/static 修饰符、Context 参数及完整返回类型定位。透明度定位排除 private 的旧配置迁移方法；手势的普通 getter 与 check-and-reset getter 通过 setter 调用关系区分，后者也参与写隔离。
-- 原生浮标页：重置用四个真实 Proxy setter 的组合定位；单选刷新用 permanent getter；底部提示和 alpha/gesture 可见性按日志、字段类型及调用组合定位，排除 initPreferences。
-- 位置/长度滑块用初始化日志和各自 setter 调用定位；开始/结束来自父类抽象方法与原 seekbar 回调契约。透明度值、索引、绘制与变更用 getter/setter 和 setProgress 调用关系定位。原 alpha/bar 字段按唯一类型取得。
-- Fragment 安装 `P` 与 `o/k/p/i` 事务链按原 Fragment factory 和真实调用图定位；不任取同形方法。生命周期方法继续使用平台保留名称。
-- Preference enabled setter 用 boolean 字段与三个通知/读取调用的组合定位；COUI 动画取消从已定位 reset 内唯一的 SeekBar 层级 `void()` 调用取得，支持继承方法改名。接口声明不参与继承方法候选，DEX 构造器不转换为 Method。
-
-原生卡包浮标页进入前会完整解析关键配置/重置拦截和 UI 反射边界，安装全部必要 Hook 成功后才设 `NativeFloatSettings.isReady()`。Hook 只在带 `CARD_FLOATBAR_MODE` 的 Activity 上作用，普通 OPPO 设置保留原逻辑；卡包 Hook 异常不会回落到原 OEM 写入。
-
-跨进程入口不读取设置进程的静态 readiness，而显式启动原 Activity 并传 mode。目标侧 Activity 的 `onCreate` 守门先于混淆解析安装：未 ready 时只调用 AppCompat 祖先生命周期，跳到模块 `GestureAreaActivity` 并 finish，不运行 OEM Fragment 初始化。侧边栏内部入口也会在未 ready 时直接转独立页。安装失败仍可能留下前序 Hook，当前依靠守门和 READY 阻止进入，未实现完整 Hook 事务回滚。
-
-`SidebarDexResolver.probe(loader,true)` 只解析和反射校验，不调用原业务、不安装 Hook、不写设置。返回 `status/error/nativeReady/resolvedCount/mainFragment`；这里的 nativeReady 仅表示结构预检通过，不表示 Hook 已安装。桌面 `main(SmartSideBar.apk)` 对真实本地 APK 的 **36 项** 字符串/字段/调用组合已逐项唯一命中；这不能代替 Android 目标 ClassLoader 和原生页实际验证。
-
-2026-10-09 在 ColorOS 17 手机上，由独立 root `app_process` 创建 `PathClassLoader`，读取已安装智能侧边栏 `17.9.8`（`versionCode=170009008`）并执行强制回退元数据探针：`status=ok`、`nativeReady=true`、`resolvedCount=76`，耗时 383ms。该结果证明 root 探针环境中的解析与签名复核通过，**不表示已在注入的侧边栏目标进程中验证 DexKit JNI 装载或强制 fallback**。当前原生页面由普通反射路径运行，用户已确认设置链接跳转正常；UI 预览和保存能力需分别以实际操作验证。本地离线扫描目标另为 `17.9.2`（`versionCode=170009002`），不与实机版本混同，也不据此推断其他版本可用。
-
-明确限制：厂商 Fragment/Widget/Proxy 稳定全名、资源 key、布局 rootView、原生构造器仍固定；已支持的方法回退依赖当前业务结构保留，结构变化不按名字相近推测。任何必需项不存在或存在多个候选都会拒绝原生卡包页面，使用独立设置页。未声称全 ROM 通用。
+`probe(loader,true)` 只检查这些入口契约，返回 `status/error/sidebarEntriesReady/resolvedCount/mainFragment`；桌面元数据探针只保留四项公共 Preference 检查。旧版本关于 36 项原生浮标控件解析的结果不再代表当前验收范围。目标系统的侧边栏入口仍需实机验证，独立页面及会话不依赖这些混淆控件。
 
 ## 7. 内置 vivo 插件与系统隐藏 API
 

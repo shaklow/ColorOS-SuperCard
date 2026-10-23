@@ -35,7 +35,6 @@ public final class VectorEntry extends XposedModule {
         }
         if ("com.coloros.smartsidebar".equals(param.getPackageName()) && param.isFirstPackage()) {
             try {
-                NativeFloatSettings.install(this, param.getClassLoader());
                 SidebarIntegration.install(this, param.getClassLoader());
             }
             catch (Throwable error) { Log.e(TAG, "Unable to install sidebar settings", error); }

@@ -17,6 +17,7 @@ class SettingsLifecycleTest {
     @Test fun runtimeSettingsCompletesItsFirstLifecycle() = launch(HostToolsActivity::class.java)
     @Test fun campusSettingsCompletesItsFirstLifecycle() = launch(DhuPaySettingsActivity::class.java)
     @Test fun cardManagementCompletesItsFirstLifecycle() = launch(CardManagementActivity::class.java)
+    @Test fun gestureSettingsCompletesItsFirstLifecycle() = launch(GestureAreaActivity::class.java)
 
     @Test fun functionEditorsCompleteTheirLifecycleWithMissingArchive() {
         for (type in listOf("pay", "camera")) {

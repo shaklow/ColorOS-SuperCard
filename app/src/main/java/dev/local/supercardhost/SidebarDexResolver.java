@@ -15,7 +15,6 @@ import java.util.Map;
 
 import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
-import org.luckypray.dexkit.query.matchers.FieldMatcher;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
 import org.luckypray.dexkit.result.MethodData;
 import org.luckypray.dexkit.result.UsingFieldData;
@@ -23,11 +22,8 @@ import org.luckypray.dexkit.result.UsingFieldData;
 /** Resolves the native sidebar boundary without calling any native settings method. */
 public final class SidebarDexResolver {
     private static final String SETTINGS = "com.oplus.smartsidebar.settings.";
-    private static final String WIDGETS = SETTINGS + "widgets.";
     private static final String PREF = "androidx.preference.Preference";
     private static final String GROUP = "androidx.preference.PreferenceGroup";
-    private static final String PROXY = "com.coloros.edgepanel.utils.EdgePanelSettingsValueProxy";
-    private static final String BAR = "com.coui.appcompat.seekbar.COUISeekBar";
 
     private SidebarDexResolver() { }
 
@@ -68,14 +64,13 @@ public final class SidebarDexResolver {
         Bundle result = new Bundle();
         try (Session s = new Session(loader, forceDex)) {
             Plan p = s.ui();
-            s.nativePage(p);
             result.putString("status", "ok");
-            result.putBoolean("nativeReady", true);
+            result.putBoolean("sidebarEntriesReady", true);
             result.putString("mainFragment", p.mainFragment.getName());
             result.putInt("resolvedCount", p.methods.size() + p.fields.size());
         } catch (Throwable failure) {
             result.putString("status", "unavailable");
-            result.putBoolean("nativeReady", false);
+            result.putBoolean("sidebarEntriesReady", false);
             result.putString("error", failure.getClass().getSimpleName() + ": " + failure.getMessage());
         }
         return result;
@@ -84,12 +79,6 @@ public final class SidebarDexResolver {
     static Plan resolveUi(ClassLoader loader) throws Exception {
         try (Session s = new Session(loader, false)) { return s.ui(); }
     }
-    static Plan resolveNative(ClassLoader loader) throws Exception {
-        try (Session s = new Session(loader, false)) {
-            Plan p = s.ui(); s.nativePage(p); return p;
-        }
-    }
-
     private static final class Session implements AutoCloseable {
         final ClassLoader loader;
         final boolean force;
@@ -236,157 +225,6 @@ public final class SidebarDexResolver {
             return p;
         }
 
-        void nativePage(Plan p) throws Exception {
-            Class<?> pref = type(PREF), bar = type(BAR), proxy = type(PROXY);
-            // Every native write reachable from the card page must have an isolated exact hook.
-            proxy(p, proxy, "getFloatBarPermanentEnable", int.class, "edge_panel_float_bar_permanent");
-            proxy(p, proxy, "setFloatBarPermanentEnable", void.class, "edge_panel_float_bar_permanent", int.class);
-            proxy(p, proxy, "getFloatBarAlpha", int.class, "edge_panel_os_float_bar_alpha");
-            proxy(p, proxy, "setFloatBarAlpha", void.class, "edge_panel_os_float_bar_alpha", int.class);
-            proxy(p, proxy, "setFloatBarSize", void.class, "key_float_bar_permanent_mode_size", int.class);
-            proxy(p, proxy, "setFloatBarPosition", void.class, "key_float_bar_position", float.class);
-            proxy(p, proxy, "setFloatBarLeftRight", void.class, "key_float_bar_left_right", boolean.class);
-            proxy(p, proxy, "resetFloatBarPosition", void.class, "key_float_bar_position");
-            proxy(p, proxy, "resetFloatBarLeftRight", void.class, "key_float_bar_left_right");
-            proxy(p, proxy, "setSystemUiSlideGestureEnable", void.class, "edge_panel_system_ui_slide_gesture", int.class);
-            proxy(p, proxy, "getFloatBarIsLeft", boolean.class, "key_float_bar_left_right");
-            proxy(p, proxy, "isSystemUiSlideGestureEnable", boolean.class, "edge_panel_system_ui_slide_gesture");
-            // The reset getter itself can write settings, so also find a renamed counterpart.
-            try {
-                Method m = resolve(proxy, "isSystemUiSlideGestureEnableAndResetSetting", boolean.class,
-                        new Class<?>[]{Context.class}, shape(proxy, boolean.class, Context.class)
-                                .usingStrings("edge_panel_system_ui_slide_gesture")
-                                .addInvoke(descriptor(p.method(proxy, "setSystemUiSlideGestureEnable"))));
-                if (!Modifier.isStatic(m.getModifiers())) throw new NoSuchMethodException("gesture reset not static");
-                p.put(proxy, "isSystemUiSlideGestureEnableAndResetSetting", m);
-            } catch (NoSuchMethodException missing) {
-                // If the class still has a candidate reset method, ambiguity is unsafe.
-                if (!dex().bridge().findMethod(FindMethod.create().matcher(shape(proxy, boolean.class, Context.class)
-                        .usingStrings("edge_panel_system_ui_slide_gesture")
-                        .addInvoke(descriptor(p.method(proxy, "setSystemUiSlideGestureEnable"))))).isEmpty()) throw missing;
-            }
-            bind(p, pref, "z0", void.class, new Class<?>[]{boolean.class}, enabledSetter());
-            Class<?> promise = type(WIDGETS + "PromiseSeekbarPreference");
-            bind(p, promise, "g1", bar, new Class<?>[0], shape(promise, bar));
-            Method startBase = bind(p, promise, "j1", void.class, new Class<?>[0],
-                    shape(promise, void.class).modifiers(Modifier.ABSTRACT));
-            Method stopBase = bind(p, promise, "k1", void.class, new Class<?>[]{bar},
-                    shape(promise, void.class, bar).modifiers(Modifier.ABSTRACT));
-            Method startCallback = resolve(promise, "l", void.class, new Class<?>[]{bar},
-                    shape(promise, void.class, bar).usingStrings("onStartTrackingTouch"));
-            Method stopCallback = resolve(promise, "j", void.class, new Class<?>[]{bar},
-                    shape(promise, void.class, bar).usingStrings("onStopTrackingTouch"));
-            for (String simple : new String[]{"PositionPromiseSeekbarPreference", "SizePromiseSeekbarPreference"}) {
-                Class<?> c = type(WIDGETS + simple); boolean position = simple.startsWith("Position");
-                noarg(p, c, "o1", shape(c, void.class).usingStrings(position ? "init progress == " : "init floatBarSize == "));
-                bind(p, c, "l1", void.class, new Class<?>[]{bar, int.class}, shape(c, void.class, bar, int.class)
-                        .addInvoke(descriptor(p.method(proxy, position ? "setFloatBarPosition" : "setFloatBarSize"))));
-                p.put(c, "j1", exact(c, startBase.getName()));
-                p.put(c, "k1", exact(c, stopBase.getName(), bar));
-            }
-            Class<?> alpha = type(WIDGETS + "SeekBarPreference");
-            Method alphaValue = bind(p, alpha, "g1", int.class, new Class<?>[0], shape(alpha, int.class)
-                    .addInvoke(descriptor(p.method(proxy, "getFloatBarAlpha"))));
-            bind(p, alpha, "h1", int.class, new Class<?>[0], shape(alpha, int.class).addInvoke(descriptor(alphaValue)));
-            noarg(p, alpha, "j1", shape(alpha, void.class).addInvoke(MethodMatcher.create().name("setProgress").paramTypes("int")));
-            bind(p, alpha, "k", void.class, new Class<?>[]{bar, int.class, boolean.class},
-                    shape(alpha, void.class, bar, int.class, boolean.class)
-                            .addInvoke(descriptor(p.method(proxy, "setFloatBarAlpha"))));
-            p.put(alpha, "l", exact(alpha, startCallback.getName(), bar));
-            p.put(alpha, "j", exact(alpha, stopCallback.getName(), bar));
-            p.field(alpha, "bar", uniqueField(alpha, type("com.coui.appcompat.seekbar.COUISectionSeekBar")));
-            for (String simple : new String[]{"FloatBarSettingsWithoutGestureFragment", "FloatBarSettingsFragment"}) {
-                boolean gesture = simple.equals("FloatBarSettingsFragment");
-                Class<?> c = type(SETTINGS + simple);
-                for (String life : new String[]{"onCreate", "onResume", "onPause", "onDestroy"}) {
-                    p.put(c, life, exact(c, life, life.equals("onCreate") ? new Class<?>[]{Bundle.class} : new Class<?>[0]));
-                }
-                bind(p, c, "y", String.class, new Class<?>[0], shape(c, String.class));
-                MethodMatcher reset = shape(c, void.class);
-                for (String setter : new String[]{"setFloatBarAlpha", "setFloatBarSize", "setFloatBarPosition", "setFloatBarLeftRight"}) {
-                    reset.addInvoke(descriptor(p.method(proxy, setter)));
-                }
-                noarg(p, c, gesture ? "U" : "R", reset);
-                noarg(p, c, gesture ? "V" : "S", shape(c, void.class)
-                        .addInvoke(descriptor(p.method(proxy, "getFloatBarPermanentEnable"))));
-                Method bottom = noarg(p, c, gesture ? "e0" : "Z", gesture
-                        ? shape(c, void.class).usingStrings("updateBottomTips", "root_pfs")
-                        : shape(c, void.class).usingStrings("root_pfs").addInvoke(MethodMatcher.create()
-                                .name("isGestureNavMode").returnType("boolean").paramTypes()));
-                noarg(p, c, gesture ? "g0" : "b0", shape(c, void.class)
-                        .addInvoke(descriptor(bottom)).addInvoke(descriptor(p.method(type(GROUP), "W0")))
-                        .addUsingField(FieldMatcher.create().declaredClass(c).type(alpha)));
-                if (gesture) noarg(p, c, "h0", shape(c, void.class).usingStrings("root_pfs")
-                        .addInvoke(descriptor(bottom)).addInvoke(descriptor(p.method(type(GROUP), "W0"))).addUsingField(FieldMatcher.create()
-                                .declaredClass("com.coloros.edgepanel.utils.EdgePanelFeatureOption").name("IS_GLOBAL_INPUT_SUPPORTED")));
-                p.field(c, "alpha", uniqueField(c, alpha));
-            }
-            Method cancel = null;
-            if (!force) try { cancel = exact(bar, "w1"); } catch (NoSuchMethodException ignored) { }
-            if (cancel == null || !signature(cancel, void.class)) {
-                Method reset = p.method(type(SETTINGS + "FloatBarSettingsWithoutGestureFragment"), "R");
-                cancel = linked(reset, m -> m.getDeclaringClass().isAssignableFrom(bar)
-                        && signature(m, void.class), "seekbar cancel from reset");
-            }
-            p.put(bar, "w1", cancel);
-            Class<?> activity = type(SETTINGS + "FloatBarSettingsActivity");
-            Class<?> without = type(SETTINGS + "FloatBarSettingsWithoutGestureFragment");
-            Method createFragment = noarg(p, activity, "P", shape(activity, void.class).modifiers(Modifier.PRIVATE)
-                    .addInvoke(MethodMatcher.create().returnType(without).paramTypes()));
-            Class<?> fragmentActivity = type("androidx.fragment.app.FragmentActivity");
-            Method manager = null;
-            if (!force) try { manager = exact(fragmentActivity, "o"); } catch (NoSuchMethodException ignored) { }
-            if (manager == null) manager = linked(createFragment, m -> m.getDeclaringClass().isAssignableFrom(activity)
-                    && m.getParameterCount() == 0 && m.getReturnType().getName().startsWith("androidx.fragment.app.")
-                    && !m.getReturnType().getName().endsWith("Fragment"), "fragment manager");
-            p.put(fragmentActivity, "o", manager);
-            Class<?> managerType = manager.getReturnType();
-            Method transaction = linkedOrNamed(createFragment, managerType, "k", m -> m.getDeclaringClass() == managerType
-                    && m.getParameterCount() == 0 && m.getReturnType().getName().startsWith("androidx.fragment.app.")
-                    && m.getReturnType() != managerType, "begin transaction");
-            p.put(managerType, "k", transaction);
-            Class<?> tx = transaction.getReturnType();
-            Method replace = linkedOrNamed(createFragment, tx, "p", m -> m.getDeclaringClass() == tx
-                    && signature(m, tx, int.class, typeUnchecked("androidx.fragment.app.Fragment")), "replace fragment", int.class, type("androidx.fragment.app.Fragment"));
-            p.put(tx, "p", replace);
-            Method commit = linkedOrNamed(createFragment, tx, "i", m -> m.getDeclaringClass() == tx
-                    && signature(m, int.class), "commit transaction");
-            p.put(tx, "i", commit);
-            // All Android lifecycle methods are retained by framework contracts.
-            exact(type(SETTINGS + "FloatBarSettingsActivity"), "onCreate", Bundle.class);
-            exact(type(SETTINGS + "FloatBarSettingsPhoneActivity"), "onCreate", Bundle.class);
-            exact(type("androidx.appcompat.app.AppCompatActivity"), "onCreate", Bundle.class);
-        }
-        Class<?> typeUnchecked(String name) { try { return type(name); } catch (ClassNotFoundException e) { throw new IllegalStateException(e); } }
-        Method linkedOrNamed(Method source, Class<?> owner, String name,
-                java.util.function.Predicate<Method> check, String purpose, Class<?>... args) throws Exception {
-            if (!force) try { Method m = exact(owner, name, args); if (check.test(m)) return m; }
-            catch (NoSuchMethodException ignored) { }
-            return linked(source, check, purpose);
-        }
-        void proxy(Plan p, Class<?> owner, String name, Class<?> ret, String key, Class<?>... rest) throws Exception {
-            Class<?>[] args = new Class<?>[rest.length + 1]; args[0] = Context.class;
-            System.arraycopy(rest, 0, args, 1, rest.length);
-            MethodMatcher matcher = shape(owner, ret, args).modifiers(Modifier.PUBLIC | Modifier.STATIC).usingStrings(key);
-            if (name.equals("resetFloatBarPosition")) matcher.usingStrings(key, "percent_y");
-            if (name.equals("resetFloatBarLeftRight")) matcher.usingStrings(key, "isLeft");
-            // The two boolean gesture getters differ by a reset setter call.
-            if (name.equals("isSystemUiSlideGestureEnable")) {
-                if (!force) try {
-                    Method m = exact(owner, name, args);
-                    if (m.getReturnType() == ret && Modifier.isStatic(m.getModifiers())) { p.put(owner, name, m); return; }
-                } catch (NoSuchMethodException ignored) { }
-                Method setter = p.method(owner, "setSystemUiSlideGestureEnable");
-                Method m = dex().uniqueMethod(name, matcher, candidate -> {
-                    for (MethodData invoked : dex().bridge().getMethodData(candidate).getInvokes())
-                        if (invoked.getDescriptor().equals(descriptor(setter))) return false;
-                    return Modifier.isStatic(candidate.getModifiers()) && signature(candidate, ret, args);
-                });
-                p.put(owner, name, m); return;
-            }
-            Method m = bind(p, owner, name, ret, args, matcher);
-            if (!Modifier.isStatic(m.getModifiers())) throw new NoSuchMethodException(name + " not static");
-        }
         @Override public void close() { if (dex != null) dex.close(); }
     }
 
@@ -399,12 +237,6 @@ public final class SidebarDexResolver {
         }
         if (candidates.size() != 1) throw new ClassNotFoundException("preference listener candidates=" + candidates.size());
         return candidates.values().iterator().next();
-    }
-    private static Field uniqueField(Class<?> owner, Class<?> fieldType) throws Exception {
-        List<Field> fields = new ArrayList<>();
-        for (Field f : owner.getDeclaredFields()) if (f.getType() == fieldType && !Modifier.isStatic(f.getModifiers())) fields.add(f);
-        if (fields.size() != 1) throw new NoSuchFieldException(owner.getName() + " fields for " + fieldType.getName() + "=" + fields.size());
-        fields.get(0).setAccessible(true); return fields.get(0);
     }
     private static Method uniqueShape(Class<?> owner, Class<?> ret, Class<?>[] args,
             java.util.function.Predicate<Method> extra) throws Exception {
@@ -433,27 +265,6 @@ public final class SidebarDexResolver {
             .paramTypes(PREF).usingStrings("Found duplicated key: \""); }
     private static MethodMatcher summary() { return MethodMatcher.create().declaredClass(PREF).returnType("void")
             .paramTypes("java.lang.CharSequence").usingStrings("Preference already has a SummaryProvider set."); }
-    private static MethodMatcher enabledSetter() {
-        // setEnabled writes its own bool and notifies dependents from shouldDisableDependents().
-        // setSelectable only notifies, setVisible calls its listener, notifyDependencyChange has no bool getter.
-        return MethodMatcher.create().declaredClass(PREF).returnType("void").paramTypes("boolean")
-                .addUsingField(FieldMatcher.create().declaredClass(PREF).type("boolean"))
-                .addInvoke(MethodMatcher.create().declaredClass(PREF).returnType("boolean").paramTypes())
-                .addInvoke(MethodMatcher.create().declaredClass(PREF).returnType("void").paramTypes("boolean"))
-                .addInvoke(MethodMatcher.create().declaredClass(PREF).returnType("void").paramTypes());
-    }
-    private static String descriptor(Method method) {
-        StringBuilder out = new StringBuilder(descriptor(method.getDeclaringClass())).append("->").append(method.getName()).append('(');
-        for (Class<?> c : method.getParameterTypes()) out.append(descriptor(c));
-        return out.append(')').append(descriptor(method.getReturnType())).toString();
-    }
-    private static String descriptor(Class<?> c) {
-        if (c == void.class) return "V"; if (c == boolean.class) return "Z"; if (c == int.class) return "I";
-        if (c == float.class) return "F"; if (c == long.class) return "J"; if (c == double.class) return "D";
-        if (c == byte.class) return "B"; if (c == short.class) return "S"; if (c == char.class) return "C";
-        return c.isArray() ? c.getName().replace('.', '/') : "L" + c.getName().replace('.', '/') + ";";
-    }
-
     /** Host-side metadata probe: only reads the APK, prints method descriptors and ambiguity. */
     public static void main(String[] args) throws Exception {
         if (args.length != 1) throw new IllegalArgumentException("Usage: SidebarDexResolver <SmartSideBar.apk>");
@@ -461,76 +272,6 @@ public final class SidebarDexResolver {
             Map<String, MethodMatcher> checks = new LinkedHashMap<>();
             checks.put("mainUpdate", mainUpdate()); checks.put("preferenceFind", findPreference());
             checks.put("preferenceAdd", addPreference()); checks.put("preferenceSummary", summary());
-            checks.put("preferenceEnabled", enabledSetter());
-            checks.put("positionRender", MethodMatcher.create().declaredClass(WIDGETS + "PositionPromiseSeekbarPreference")
-                    .returnType("void").paramTypes().usingStrings("init progress == "));
-            checks.put("sizeRender", MethodMatcher.create().declaredClass(WIDGETS + "SizePromiseSeekbarPreference")
-                    .returnType("void").paramTypes().usingStrings("init floatBarSize == "));
-            String[] proxyNames = {"getFloatBarPermanentEnable", "setFloatBarPermanentEnable", "getFloatBarAlpha",
-                    "setFloatBarAlpha", "setFloatBarSize", "setFloatBarPosition", "setFloatBarLeftRight",
-                    "resetFloatBarPosition", "resetFloatBarLeftRight", "setSystemUiSlideGestureEnable", "getFloatBarIsLeft"};
-            String[] proxyKeys = {"edge_panel_float_bar_permanent", "edge_panel_float_bar_permanent", "edge_panel_os_float_bar_alpha",
-                    "edge_panel_os_float_bar_alpha", "key_float_bar_permanent_mode_size", "key_float_bar_position", "key_float_bar_left_right",
-                    "key_float_bar_position", "key_float_bar_left_right", "edge_panel_system_ui_slide_gesture", "key_float_bar_left_right"};
-            String[] returns = {"int", "void", "int", "void", "void", "void", "void", "void", "void", "void", "boolean"};
-            String[] values = {null, "int", null, "int", "int", "float", "boolean", null, null, "int", null};
-            Map<String, String> descriptors = new LinkedHashMap<>();
-            for (int i = 0; i < proxyNames.length; i++) {
-                MethodMatcher matcher = MethodMatcher.create().declaredClass(PROXY).modifiers(Modifier.PUBLIC | Modifier.STATIC)
-                        .returnType(returns[i]).paramTypes(values[i] == null ? new String[]{"android.content.Context"}
-                                : new String[]{"android.content.Context", values[i]}).usingStrings(proxyKeys[i]);
-                if (proxyNames[i].equals("resetFloatBarPosition")) matcher.usingStrings(proxyKeys[i], "percent_y");
-                if (proxyNames[i].equals("resetFloatBarLeftRight")) matcher.usingStrings(proxyKeys[i], "isLeft");
-                MethodData d = metadata(dex, proxyNames[i], matcher);
-                descriptors.put(proxyNames[i], d.getDescriptor());
-            }
-            for (String simple : new String[]{"FloatBarSettingsWithoutGestureFragment", "FloatBarSettingsFragment"}) {
-                String owner = SETTINGS + simple;
-                MethodMatcher reset = MethodMatcher.create().declaredClass(owner).returnType("void").paramTypes();
-                for (String setter : new String[]{"setFloatBarAlpha", "setFloatBarSize", "setFloatBarPosition", "setFloatBarLeftRight"}) reset.addInvoke(descriptors.get(setter));
-                MethodData resetData = metadata(dex, simple + ".reset", reset);
-                if (!simple.equals("FloatBarSettingsFragment")) {
-                    Map<String, MethodData> stop = new LinkedHashMap<>();
-                    for (MethodData invoked : resetData.getInvokes()) {
-                        if (invoked.getDeclaredClassName().startsWith("com.coui.appcompat.seekbar.")
-                                && invoked.getReturnTypeName().equals("void") && invoked.getParamCount() == 0
-                                && !invoked.getDescriptor().contains("-><")) stop.put(invoked.getDescriptor(), invoked);
-                    }
-                    if (stop.size() != 1) throw new NoSuchMethodException("seekbar cancel candidates=" + stop.keySet());
-                    System.out.println("seekbarCancel=" + stop.keySet().iterator().next());
-                }
-                checks.put(simple + ".radio", MethodMatcher.create().declaredClass(owner).returnType("void").paramTypes()
-                        .addInvoke(descriptors.get("getFloatBarPermanentEnable")));
-                MethodMatcher bottom = MethodMatcher.create().declaredClass(owner).returnType("void").paramTypes().usingStrings("root_pfs");
-                boolean gesture = simple.equals("FloatBarSettingsFragment");
-                if (gesture) bottom.usingStrings("root_pfs", "updateBottomTips");
-                else bottom.addInvoke(MethodMatcher.create().name("isGestureNavMode").returnType("boolean").paramTypes());
-                String bottomDescriptor = metadata(dex, simple + ".bottom", bottom).getDescriptor();
-                checks.put(simple + ".alphaVisibility", MethodMatcher.create().declaredClass(owner).returnType("void").paramTypes()
-                        .addInvoke(bottomDescriptor).addInvoke("Landroidx/preference/PreferenceGroup;->W0(Landroidx/preference/Preference;)Z")
-                        .addUsingField(FieldMatcher.create().declaredClass(owner).type(WIDGETS + "SeekBarPreference")));
-                if (gesture) checks.put(simple + ".gestureVisibility", MethodMatcher.create().declaredClass(owner).returnType("void").paramTypes()
-                        .usingStrings("root_pfs").addInvoke(bottomDescriptor)
-                        .addInvoke("Landroidx/preference/PreferenceGroup;->W0(Landroidx/preference/Preference;)Z").addUsingField(FieldMatcher.create()
-                                .declaredClass("com.coloros.edgepanel.utils.EdgePanelFeatureOption").name("IS_GLOBAL_INPUT_SUPPORTED")));
-            }
-            checks.put("positionChange", MethodMatcher.create().declaredClass(WIDGETS + "PositionPromiseSeekbarPreference")
-                    .returnType("void").paramTypes(BAR, "int").addInvoke(descriptors.get("setFloatBarPosition")));
-            checks.put("sizeChange", MethodMatcher.create().declaredClass(WIDGETS + "SizePromiseSeekbarPreference")
-                    .returnType("void").paramTypes(BAR, "int").addInvoke(descriptors.get("setFloatBarSize")));
-            checks.put("alphaValue", MethodMatcher.create().declaredClass(WIDGETS + "SeekBarPreference").returnType("int").paramTypes()
-                    .addInvoke(descriptors.get("getFloatBarAlpha")));
-            checks.put("alphaRender", MethodMatcher.create().declaredClass(WIDGETS + "SeekBarPreference").returnType("void").paramTypes()
-                    .addInvoke(MethodMatcher.create().name("setProgress").paramTypes("int")));
-            checks.put("alphaChange", MethodMatcher.create().declaredClass(WIDGETS + "SeekBarPreference").returnType("void")
-                    .paramTypes(BAR, "int", "boolean").addInvoke(descriptors.get("setFloatBarAlpha")));
-            checks.put("sliderStart", MethodMatcher.create().declaredClass(WIDGETS + "PromiseSeekbarPreference").returnType("void")
-                    .paramTypes(BAR).usingStrings("onStartTrackingTouch"));
-            checks.put("sliderStop", MethodMatcher.create().declaredClass(WIDGETS + "PromiseSeekbarPreference").returnType("void")
-                    .paramTypes(BAR).usingStrings("onStopTrackingTouch"));
-            checks.put("createFragment", MethodMatcher.create().declaredClass(SETTINGS + "FloatBarSettingsActivity").returnType("void")
-                    .paramTypes().modifiers(Modifier.PRIVATE).addInvoke(MethodMatcher.create()
-                            .returnType(SETTINGS + "FloatBarSettingsWithoutGestureFragment").paramTypes()));
             for (Map.Entry<String, MethodMatcher> e : checks.entrySet()) {
                 metadata(dex, e.getKey(), e.getValue());
             }

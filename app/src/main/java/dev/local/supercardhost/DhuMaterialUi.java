@@ -99,6 +99,9 @@ final class DhuMaterialUi {
     static View cardManagement(Context host) throws Exception {
         return (View) MaterialUiArchive.create(host, Operation.CARD_MANAGEMENT);
     }
+    static View gestureSettings(Context host) throws Exception { return (View) MaterialUiArchive.create(host, Operation.GESTURE_SETTINGS); }
+    static void renderGestureSettings(View root, android.os.Bundle state) throws Exception { MaterialUiArchive.update(root, Operation.RENDER_GESTURE_SETTINGS, state); }
+    static void bindGestureSettings(View root, java.util.function.Consumer<android.os.Bundle> action) throws Exception { MaterialUiArchive.update(root, Operation.BIND_GESTURE_SETTINGS, action); }
 
     static View cardFunctions(Context host, String type) throws Exception {
         return (View) MaterialUiArchive.create(host, Operation.CARD_FUNCTIONS, type);
