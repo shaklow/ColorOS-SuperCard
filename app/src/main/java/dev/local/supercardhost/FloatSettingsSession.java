@@ -38,9 +38,6 @@ public final class FloatSettingsSession {
     }
     FloatSettingsState state() { return state; }
     boolean loaded() { return loaded; }
-    boolean active() { return active; }
-    boolean closed() { return closed; }
-    int tracking() { return tracking; }
     public Bundle snapshot() {
         Bundle value = state.snapshot(); value.putBoolean("loaded", loaded); value.putBoolean("connected", connected);
         value.putBoolean("saving", saving || !pending.isEmpty());

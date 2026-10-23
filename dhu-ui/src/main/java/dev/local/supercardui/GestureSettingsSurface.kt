@@ -100,7 +100,15 @@ object GestureSettingsSurface {
                 val slider = Slider(context).apply {
                     tag = key(name); valueFrom = 0f; valueTo = 1000f; stepSize = if (name == "opacity") 10f else 1f
                     contentDescription = label; isSaveEnabled = false; minimumHeight = dp(48)
-                    setLabelFormatter { "${(it / 10).roundToInt()}%" }
+                    setLabelFormatter { value ->
+                        val fraction = value / 1000
+                        val percentage = when (name) {
+                            "length" -> (.0401f + fraction * .9599f) * 100
+                            "position" -> fraction * (1 - this@Page.values.getFloat("bottom", .98f) + this@Page.values.getFloat("top", .76f)) * 100
+                            else -> fraction * 100
+                        }
+                        "${percentage.roundToInt()}%"
+                    }
                     addOnChangeListener { _, value, fromUser -> if (fromUser && !rendering && loaded) emit(name) { putInt("value", value.roundToInt()) } }
                     addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
                         override fun onStartTrackingTouch(slider: Slider) { emit("tracking") { putInt("kind", if (name == "position") 0 else if (name == "length") 1 else 2) } }
@@ -138,7 +146,7 @@ object GestureSettingsSurface {
                     if (pair.first.value != value) pair.first.value = value
                     pair.first.isEnabled = loaded && (name != "opacity" || enabled && visible)
                     setText(pair.second, when (name) {
-                        "position" -> "浮标位置 · ${(value / 10).roundToInt()}%"
+                        "position" -> "浮标位置 · 屏幕 ${(top * 100).roundToInt()}%"
                         "length" -> "唤出范围长度 · ${((bottom - top) * 100).roundToInt()}%"
                         else -> "浮标不透明度 · ${(value / 10).roundToInt()}%"
                     })
