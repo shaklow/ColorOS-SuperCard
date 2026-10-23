@@ -1,6 +1,7 @@
 package dev.local.supercardui;
 
 import android.content.Context;
+import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.util.AttributeSet;
@@ -27,6 +28,10 @@ public final class DhuCardSurface {
         Context context = new ContextThemeWrapper(resources, R.style.Theme_DhuUi);
         return inflater(context).inflate(R.layout.dhu_expanded, null, false);
     }
+
+    public static View createNativeCard(Context context) { return NativeCardSurface.create(context); }
+    public static void bindNativeCard(View root, java.util.function.Consumer<Bundle> action) { NativeCardSurface.bind(root, action); }
+    public static void renderNativeCard(View root, Bundle state) { NativeCardSurface.render(root, state); }
 
     public static View createLens(Context resources) { return LensCardSurface.create(resources); }
     public static void renderLens(View root, android.os.Bundle values) { LensCardSurface.render(root, values); }

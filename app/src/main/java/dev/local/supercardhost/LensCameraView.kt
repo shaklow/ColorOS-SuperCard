@@ -15,7 +15,8 @@ import android.widget.TextView
 import android.util.Log
 
 /** Real system camera UI composed into the existing floating card, including its native controls. */
-internal class LensCameraView(context: Context, private val type: String, back: Runnable) : FrameLayout(context) {
+internal class LensCameraView(context: Context, private val type: String, back: Runnable,
+    private val secure: (Boolean) -> Unit = { PluginRuntime.setLensSecure(it) }) : FrameLayout(context) {
     private val main = Handler(Looper.getMainLooper())
     private val texture = TextureView(context)
     private val status = TextView(context)
@@ -51,7 +52,7 @@ internal class LensCameraView(context: Context, private val type: String, back: 
                     // existing buffer during layout changes; touch uses the same transform.
                     surface.setDefaultBufferSize(width, height)
                     output = Surface(surface)
-                    PluginRuntime.setLensSecure(true)
+                    secure(true)
                     RootDisplayClient.requestBackend()
                     main.postDelayed(timeout, 10_000)
                     val start = object : Runnable {
@@ -94,7 +95,7 @@ internal class LensCameraView(context: Context, private val type: String, back: 
         catch (error: Exception) { Log.w("SuperCardLens", "Cannot release camera display", error) }
         finally {
             session = null; output?.release(); output = null
-            PluginRuntime.setLensSecure(false)
+            secure(false)
         }
     }
 

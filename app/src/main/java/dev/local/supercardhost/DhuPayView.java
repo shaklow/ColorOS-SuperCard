@@ -63,7 +63,8 @@ public final class DhuPayView extends LinearLayout {
         ui.qr.setOnLongClickListener(v -> { enlarge(); return true; });
         ui.settings.setOnClickListener(v -> {
             setActive(false);
-            if (PluginRuntime.systemHost) PluginRuntime.hide();
+            if (getContext() instanceof CardWindowOwner) ((CardWindowOwner) getContext()).hideCard();
+            else if (PluginRuntime.systemHost) PluginRuntime.hide();
             services.startActivity(settingsIntent(services).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         });
         if (preview) {
@@ -163,7 +164,8 @@ public final class DhuPayView extends LinearLayout {
                     clearCode(); showMessage("本次请求已超时，点击码区重试"); return;
                 }
                 code = result.getString("code"); qrBitmap = imageQr; barBitmap = imageBar;
-                if (PluginRuntime.systemHost) { PluginRuntime.setCampusSecure(true); secureApplied = true; }
+                if (getContext() instanceof CardWindowOwner) { ((CardWindowOwner) getContext()).secureCard(true); secureApplied = true; }
+                else if (PluginRuntime.systemHost) { PluginRuntime.setCampusSecure(true); secureApplied = true; }
                 ui.qr.setImageBitmap(imageQr); ui.barcode.setImageBitmap(imageBar);
                 ui.numbers.setText("查看付款码数字");
                 ui.empty.setVisibility(GONE); ui.codes.setVisibility(VISIBLE); ui.loading.setVisibility(GONE);
@@ -182,7 +184,11 @@ public final class DhuPayView extends LinearLayout {
     private void clearCode() {
         if (enlarged != null) { enlarged.dismiss(); enlarged = null; }
         code = null; qrBitmap = null; barBitmap = null; nextRefresh = 0;
-        if (secureApplied) { secureApplied = false; PluginRuntime.setCampusSecure(false); }
+        if (secureApplied) {
+            secureApplied = false;
+            if (getContext() instanceof CardWindowOwner) ((CardWindowOwner) getContext()).secureCard(false);
+            else PluginRuntime.setCampusSecure(false);
+        }
         ui.qr.setImageDrawable(null); ui.barcode.setImageDrawable(null);
         ui.codes.setVisibility(INVISIBLE); ui.empty.setVisibility(VISIBLE);
         ui.loading.setVisibility(GONE); ui.emptyIcon.setVisibility(VISIBLE);

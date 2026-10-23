@@ -22,6 +22,9 @@ internal object MaterialUiArchive {
     enum class Operation(val entry: String, val result: Class<*>, vararg val parameters: Class<*>) {
         CARD("create", View::class.java, Context::class.java),
         EXPANDED("createExpanded", View::class.java, Context::class.java),
+        NATIVE_CARD("createNativeCard", View::class.java, Context::class.java),
+        BIND_NATIVE_CARD("bindNativeCard", Void.TYPE, View::class.java, Consumer::class.java),
+        RENDER_NATIVE_CARD("renderNativeCard", Void.TYPE, View::class.java, Bundle::class.java),
         LENS("createLens", View::class.java, Context::class.java),
         SETTINGS("createSettings", View::class.java, Context::class.java, String::class.java),
         CARD_MANAGEMENT("createCardManagement", View::class.java, Context::class.java),

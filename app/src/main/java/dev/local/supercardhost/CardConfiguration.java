@@ -72,7 +72,7 @@ public final class CardConfiguration {
         }
         Intent intent = new Intent(ACTION).setPackage(SYSTEM_UI).putExtra("operation", operation);
         if (values != null) intent.putExtras(values);
-        if ("openFloatSettings".equals(operation) || "openLegacyCards".equals(operation))
+        if ("openFloatSettings".equals(operation) || "openLegacyCards".equals(operation) || "openNativeCards".equals(operation))
             intent.putExtra(FLOAT_SETTINGS_DEADLINE, SystemClock.elapsedRealtime() + 5000);
         BroadcastOptions options = BroadcastOptions.makeBasic().setShareIdentityEnabled(true);
         // Bound read/ephemeral-preview and fixed settings-launch calls. A late callback after a service
@@ -80,7 +80,7 @@ public final class CardConfiguration {
         boolean bounded = callback != null && ("query".equals(operation) || "preview".equals(operation) || "previewEnd".equals(operation)
                 || "openFloatSettings".equals(operation) || "diagnostics".equals(operation)
                 || "payTouch".equals(operation) || "payUser".equals(operation)
-                || "openLegacyCards".equals(operation) || "nativeCards".equals(operation));
+                || "openLegacyCards".equals(operation) || "openNativeCards".equals(operation) || "nativeCards".equals(operation));
         AtomicBoolean completed = new AtomicBoolean();
         Runnable timeout = () -> {
             if (completed.compareAndSet(false, true)) callback.complete(null,
@@ -120,6 +120,13 @@ public final class CardConfiguration {
             // Compatibility with an already-running 0.2.14 client. Page redirection
             // is retired; even a stale request cannot enable it again.
             put(context, "supercard_native_cards", 0);
+            return;
+        }
+        if ("openNativeCards".equals(operation)) {
+            long deadline = intent.getLongExtra(FLOAT_SETTINGS_DEADLINE, 0);
+            if (deadline <= SystemClock.elapsedRealtime() || deadline > SystemClock.elapsedRealtime() + 5000)
+                throw new IllegalArgumentException("Native card request expired");
+            NativeCardRuntime.show();
             return;
         }
         if ("payUser".equals(operation)) {

@@ -23,6 +23,17 @@ class HostActivity : M3eSettingsActivity() {
                 }
             }
         }
+        ui.on("native_cards") {
+            val button = ui.view<View>("native_cards")
+            button.isEnabled = false
+            CardConfiguration.request(this, "openNativeCards", null) { _, error ->
+                if (alive()) {
+                    button.isEnabled = true
+                    if (error == null) finish()
+                    else Toast.makeText(this, error, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
         ui.on("open_cards") { open("$packageName.CardManagementActivity") }
         ui.on("open_runtime") { open("$packageName.HostToolsActivity") }
         ui.on("open_campus") { open("$packageName.DhuPaySettingsActivity") }

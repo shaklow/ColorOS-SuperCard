@@ -21,6 +21,7 @@ internal object RuntimeBootstrap {
             }, object : RuntimeBootstrapSession.Driver {
                 override fun prepare(): Runnable {
                     val module = application.createPackageContext("dev.local.supercardhost", Context.CONTEXT_IGNORE_SECURITY)
+                    NativeCardRuntime.install(application)
                     return PluginRuntime.prepare(application, module)
                 }
                 override fun changed() {

@@ -41,7 +41,6 @@ public final class RootDisplayClient {
 
     public static void install(Application host) {
         if (RootDisplayClient.host != null) return;
-        RootDisplayClient.host = host;
         host.registerReceiver(new BroadcastReceiver() {
             @Override public void onReceive(Context context, Intent intent) {
                 if (getSentFromUid() != 0) {
@@ -59,6 +58,7 @@ public final class RootDisplayClient {
                 } catch (Throwable error) { Log.e(TAG, "Display backend handshake failed", error); }
             }
         }, new IntentFilter(RootDisplayProtocol.ACTION), "android.permission.DUMP", null, Context.RECEIVER_EXPORTED);
+        RootDisplayClient.host = host;
         requestBackend();
         MAIN.postDelayed(new Runnable() {
             @Override public void run() {
