@@ -227,11 +227,16 @@ object CardManagementSurface {
             "dhu" -> "东华校园卡付款码与授权设置"
             else -> "保留现有卡片配置"
         }
-        private fun iconButton(drawable: Int, name: String) = AppCompatImageButton(context, null, androidx.appcompat.R.attr.borderlessButtonStyle).apply {
+        private fun iconButton(drawable: Int, name: String) = AppCompatImageButton(context, null, 0).apply {
             tag = key(name); setImageDrawable(AppCompatResources.getDrawable(context, drawable))
             val tint = color(com.google.android.material.R.attr.colorOnSurfaceVariant)
             imageTintList = ColorStateList(arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()),
                 intArrayOf((tint and 0x00ffffff) or (0x61 shl 24), tint))
+            background = android.graphics.drawable.RippleDrawable(
+                ColorStateList.valueOf((tint and 0x00ffffff) or (0x1f shl 24)), null,
+                android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(android.graphics.Color.WHITE)
+                })
             scaleType = ImageView.ScaleType.CENTER_INSIDE
             minimumWidth = dp(48); minimumHeight = dp(48); setPadding(dp(12), dp(12), dp(12), dp(12))
         }
