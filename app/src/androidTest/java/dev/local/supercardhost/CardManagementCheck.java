@@ -112,7 +112,12 @@ final class CardManagementCheck {
     private void pointer(long down, int action, float x, float y) {
         MotionEvent event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0);
         event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
-        try { test.sendPointerSync(event); } finally { event.recycle(); }
+        // A platform drag leaves the Activity window for the system drag window.
+        // Use the shell input channel so Android 16 does not reject that UID change.
+        try {
+            if (!test.getUiAutomation().injectInputEvent(event, true))
+                throw new AssertionError("Platform drag input was rejected");
+        } finally { event.recycle(); }
     }
     private static void center(View view, int[] point) {
         view.getLocationOnScreen(point); point[0] += view.getWidth() / 2; point[1] += view.getHeight() / 2;
