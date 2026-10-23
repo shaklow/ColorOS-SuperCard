@@ -17,7 +17,7 @@ final class FloatSettingsState {
         this.top = top; this.bottom = bottom; this.opacity = opacity;
         this.visible = visible; this.autoHide = autoHide;
         this.source = new Bundle(source); enabled = source.getBoolean("enabled", true);
-        unlocked = source.getBoolean("unlocked", true); lockStyle = Math.max(0, Math.min(3, source.getInt("lockStyle")));
+        unlocked = source.getBoolean("unlocked", true); lockStyle = GestureSettingsRules.style(source.getInt("lockStyle"));
     }
 
     static FloatSettingsState defaults() { return new FloatSettingsState(GestureSettingsRules.DEFAULT_TOP, GestureSettingsRules.DEFAULT_BOTTOM, GestureSettingsRules.DEFAULT_OPACITY, true, true); }
@@ -60,7 +60,7 @@ final class FloatSettingsState {
         Bundle next = snapshot(); next.putBoolean("unlocked", value); return read(next);
     }
     FloatSettingsState lockStyle(int value) {
-        Bundle next = snapshot(); next.putInt("lockStyle", Math.max(0, Math.min(3, value))); return read(next);
+        Bundle next = snapshot(); next.putInt("lockStyle", GestureSettingsRules.style(value)); return read(next);
     }
     int progress(int kind) {
         if (kind == 2) return Math.round(opacity * 1000);

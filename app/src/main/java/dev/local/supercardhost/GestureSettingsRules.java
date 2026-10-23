@@ -18,6 +18,8 @@ final class GestureSettingsRules {
     static boolean validEditRange(float top, float bottom) {
         return validFractionRange(top, bottom) && bottom - top + .000001f >= MIN_LENGTH;
     }
+    static boolean validStyle(int value) { return value >= 0 && value <= 3; }
+    static int style(int value) { return validStyle(value) ? value : 0; }
     static boolean validOpacity(float value) { return Float.isFinite(value) && value >= 0 && value <= 1; }
     static float opacity(int percent) { return Math.max(0, Math.min(100, percent)) / 100f; }
     static float opacity(float value) {

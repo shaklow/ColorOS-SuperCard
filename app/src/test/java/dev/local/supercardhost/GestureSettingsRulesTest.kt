@@ -47,8 +47,11 @@ class GestureSettingsRulesTest {
         val raw = "0;1;${metrics.widthPixels};2"
         Settings.Secure.putString(context.contentResolver, GestureSettingsRules.RANGE_KEY, raw)
         Settings.Secure.putString(context.contentResolver, "navigation_gesture_right_side", "side_back;not_side_card")
+        Settings.Secure.putInt(context.contentResolver, "bbk_lock_disable_card_slide_setting", 1)
+        Settings.Secure.putInt(context.contentResolver, "bbk_lock_disable_card_slide_open_style", 99)
         val snapshot = CardConfiguration.read(context)
         assertFalse(snapshot.getBoolean("unlocked"))
+        assertEquals(0, snapshot.getInt("lockStyle"))
         val state = FloatSettingsState.read(snapshot)!!
         assertEquals(1f / metrics.heightPixels, state.top, 0f)
         assertEquals(2f / metrics.heightPixels, state.bottom, 0f)

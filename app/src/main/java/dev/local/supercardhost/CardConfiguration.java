@@ -180,7 +180,7 @@ public final class CardConfiguration {
             }
         } else if ("lockStyle".equals(operation)) {
             int style = intent.getIntExtra("value", -1);
-            if (style < 0 || style > 3) throw new IllegalArgumentException("Invalid lock style");
+            if (!GestureSettingsRules.validStyle(style)) throw new IllegalArgumentException("Invalid lock style");
             put(context, "bbk_lock_disable_card_slide_setting", style == 0 ? 0 : 1);
             put(context, "bbk_lock_disable_card_slide_open_style", style);
         } else if ("handleVisible".equals(operation)) {
@@ -224,7 +224,7 @@ public final class CardConfiguration {
         state.putFloat("handleOpacity", GestureSettingsRules.opacity(Settings.Secure.getInt(context.getContentResolver(),
                 "supercard_handle_opacity", GestureSettingsRules.DEFAULT_OPACITY_PERCENT)));
         int style = Settings.Secure.getInt(context.getContentResolver(), "bbk_lock_disable_card_slide_open_style", 0);
-        state.putInt("lockStyle", Settings.Secure.getInt(context.getContentResolver(), "bbk_lock_disable_card_slide_setting", 0) == 1 ? style : 0);
+        state.putInt("lockStyle", Settings.Secure.getInt(context.getContentResolver(), "bbk_lock_disable_card_slide_setting", 0) == 1 ? GestureSettingsRules.style(style) : 0);
         DisplayMetrics metrics = metrics(context);
         state.putInt("screenWidth", metrics.widthPixels); state.putInt("screenHeight", metrics.heightPixels);
         float top = GestureSettingsRules.DEFAULT_TOP, bottom = GestureSettingsRules.DEFAULT_BOTTOM;
