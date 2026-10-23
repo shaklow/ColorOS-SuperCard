@@ -44,3 +44,17 @@ jobs:
               assert len(names) == 1, image
               print("SUPERCARD_QA_IMAGE|" + image + "|" + base64.b64encode(archive.read(names[0])).decode("ascii"))
           print("SUPERCARD_QA_RENDER_COUNT=" + str(sum(n.endswith(".png") for n in archive.namelist())))
+          try:
+              urllib.request.build_opener(NoRedirect()).open(urllib.request.Request(base + "/actions/artifacts/12474206547/zip", headers=headers), timeout=30)
+              raise AssertionError("Expected baseline artifact redirect")
+          except urllib.error.HTTPError as redirect:
+              assert redirect.code == 302, redirect.code
+              baseline_url = redirect.headers["Location"]
+          with urllib.request.urlopen(baseline_url, timeout=90) as response:
+              baseline = zipfile.ZipFile(io.BytesIO(response.read()))
+          previous = {n.rsplit("/", 1)[-1]: baseline.read(n) for n in baseline.namelist() if n.endswith(".png")}
+          current = {n.rsplit("/", 1)[-1]: archive.read(n) for n in archive.namelist() if n.endswith(".png")}
+          assert len(previous) == 88 and len(current) == 104, (len(previous), len(current))
+          changed = [name for name, data in previous.items() if current.get(name) != data]
+          assert not changed, changed
+          print("SUPERCARD_QA_BASELINE=88_UNCHANGED")
