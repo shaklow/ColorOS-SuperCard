@@ -25,6 +25,7 @@ internal object MaterialUiArchive {
         LENS("createLens", View::class.java, Context::class.java),
         SETTINGS("createSettings", View::class.java, Context::class.java, String::class.java),
         CARD_MANAGEMENT("createCardManagement", View::class.java, Context::class.java),
+        CARD_FUNCTIONS("createCardFunctions", View::class.java, Context::class.java, String::class.java),
         RENDER_CARD_MANAGEMENT("renderCardManagement", Void.TYPE, View::class.java, Bundle::class.java),
         BIND_CARD_MANAGEMENT("bindCardManagement", Void.TYPE, View::class.java, Consumer::class.java),
         STYLE_PAY("stylePay", Void.TYPE, Context::class.java, String::class.java, Array<View>::class.java),

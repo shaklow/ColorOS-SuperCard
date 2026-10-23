@@ -82,6 +82,31 @@ class CardManagementSurfaceTest {
         assertTrue(root.named<View>("down_pay").isEnabled)
     }
 
+    @Test fun savingKeepsTheProjectedSwitchAndDoesNotFlashDisabledColors() {
+        val root = page(); CardManagementSurface.render(root, state())
+        val row = root.named<View>("card_pay")
+        val pending = state().apply {
+            putBoolean("saving", true)
+            getParcelableArrayList<Bundle>("cards")!![0].putBoolean("enabled", false)
+        }
+        CardManagementSurface.render(root, pending)
+        val toggle = root.named<MaterialSwitch>("toggle_pay")
+        assertFalse(toggle.isChecked); assertTrue(toggle.isEnabled); assertFalse(toggle.isClickable)
+        assertTrue(root.named<View>("down_pay").isEnabled); assertFalse(root.named<View>("down_pay").isClickable)
+        pending.putBoolean("saving", false); CardManagementSurface.render(root, pending)
+        assertSame(row, root.named<View>("card_pay")); assertFalse(toggle.isChecked); assertTrue(toggle.isClickable)
+    }
+
+    @Test fun functionPagesRespectLimitsWithoutOfferingUnrelatedCardEditors() {
+        for (type in listOf("pay", "camera")) {
+            val root = CardManagementSurface.createFunctions(RuntimeEnvironment.getApplication(), type)
+            CardManagementSurface.render(root, state(onlyOne = true).apply { putInt("minimum", 1); putInt("maximum", 1) })
+            assertFalse(root.findViewWithTag<MaterialSwitch>("function_toggle_pay").isEnabled)
+            assertFalse(root.findViewWithTag<MaterialSwitch>("function_toggle_camera").isEnabled)
+            assertEquals(View.GONE, root.findViewWithTag<View>("function_settings_pay").visibility)
+        }
+    }
+
     @Test fun dragDropOnlyAcceptsThisPagesCurrentLocalCard() {
         val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
         val root = CardManagementSurface.create(activity); val events = mutableListOf<Bundle>()
@@ -108,6 +133,31 @@ class CardManagementSurfaceTest {
         assertFalse(target.dispatchDragEvent(event(DragEvent.ACTION_DROP, own)))
         assertEquals(1, events.size)
         activity.finish()
+    }
+
+    @Test fun backgroundPickerPreservesSelectionWhileSavingAndReusesTiles() {
+        val root = CardManagementSurface.createFunctions(RuntimeEnvironment.getApplication(), "pay")
+        val events = mutableListOf<Bundle>()
+        CardManagementSurface.bind(root, Consumer { events.add(it) })
+        val values = state().apply {
+            putString("backgroundName", "second"); putInt("backgroundStrategy", 1)
+            putParcelableArrayList("backgrounds", arrayListOf("first", "second").mapIndexed { i, name -> Bundle().apply {
+                putString("name", name); putInt("strategy", 1); putString("title", "背景 ${i + 1}")
+            } }.let { ArrayList(it) })
+        }
+        CardManagementSurface.render(root, values)
+        val first = root.findViewWithTag<View>("function_background_0")
+        assertFalse(first.isSelected)
+        assertTrue(root.findViewWithTag<View>("function_background_1").isSelected)
+        first.performClick(); assertEquals("background", events.single().getString("action"))
+        assertEquals("first", events.single().getString("name")); assertEquals(1, events.single().getInt("strategy"))
+        values.putBoolean("saving", true); values.putString("backgroundName", "first")
+        CardManagementSurface.render(root, values)
+        assertSame(first, root.findViewWithTag<View>("function_background_0")); assertTrue(first.isSelected)
+        assertTrue(first.isEnabled); assertFalse(first.isClickable)
+        first.performClick(); assertEquals(1, events.size)
+        values.putBoolean("saving", false); CardManagementSurface.render(root, values)
+        assertTrue(first.isClickable); assertTrue(first.isSelected)
     }
 
     @Test @GraphicsMode(GraphicsMode.Mode.NATIVE)

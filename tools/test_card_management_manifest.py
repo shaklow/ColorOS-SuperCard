@@ -21,9 +21,13 @@ def main():
         assert old[0].get(build.A + 'targetActivity') == 'dev.local.supercardhost.CardManagementActivity'
         assert old[0].get(build.A + 'exported') == 'true'
         assert 'com.vivo.card.setting.CardEditActivity' in names
+        editor = [node for node in app if node.get(build.A + 'name') == 'com.vivo.card.setting.CardEditActivity']
+        assert len(editor) == 1 and editor[0].tag == 'activity-alias'
+        assert editor[0].get(build.A + 'targetActivity') == 'dev.local.supercardhost.CardFunctionSettingsActivity'
+        assert editor[0].get(build.A + 'exported') == 'true'
         assert 'dev.local.supercardhost.HostActivity' in names
         assert app.find('activity[@' + build.A + 'name="dev.local.supercardhost.CardManagementActivity"]') is not None
-        print('Card management: legacy alias and native editor manifest checks passed.')
+        print('Card management: management and function editor alias checks passed.')
 
 if __name__ == '__main__':
     main()

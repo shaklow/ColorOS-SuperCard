@@ -4,6 +4,8 @@ import android.content.ClipData
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Typeface
+import android.graphics.Point
+import android.graphics.Bitmap
 import android.os.Bundle
 import android.view.DragEvent
 import android.view.Gravity
@@ -25,10 +27,14 @@ import java.util.function.Consumer
 /** Only framework Bundle and Consumer cross the archive boundary. No runtime card views are created. */
 object CardManagementSurface {
     @JvmStatic fun create(context: Context): View = Page(ContextThemeWrapper(context, R.style.Theme_DhuUi)).root
+    @JvmStatic fun createFunctions(context: Context, type: String): View {
+        require(type == "pay" || type == "camera")
+        return Page(ContextThemeWrapper(context, R.style.Theme_DhuUi), type).root
+    }
     @JvmStatic fun render(root: View, state: Bundle) = (root.tag as Page).render(state)
     @JvmStatic fun bind(root: View, action: Consumer<Bundle>) { (root.tag as Page).action = action }
 
-    private class Page(val context: Context) {
+    private class Page(val context: Context, private val cardType: String? = null) {
         val root = FrameLayout(context)
         var action: Consumer<Bundle>? = null
         private val body = object : LinearLayout(context) {
@@ -37,7 +43,7 @@ object CardManagementSurface {
                     context.resources.getDimensionPixelSize(R.dimen.settings_page_max_width)), MeasureSpec.getMode(width)), height)
             }
         }.apply { orientation = LinearLayout.VERTICAL; setPadding(gutter(), dp(8), gutter(), dp(28)) }
-        private val list = vertical().apply { tag = key("list") }
+        private val list = AnimatedOrderColumn(context).apply { tag = key("list") }
         private val count = text("正在读取…", 18, strong = true).apply { tag = key("count") }
         private val message = text("正在读取卡片…", 14, secondary = true).apply {
             tag = key("message"); accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
@@ -45,11 +51,21 @@ object CardManagementSurface {
         private val permission = text("尚未取得设置保存权限，请到运行状态页完成授权。", 14, secondary = true)
         private val progress = ProgressBar(context).apply { tag = key("progress") }
         private val retry = button("刷新", "retry")
+        private val orderHint = text("", 13, secondary = true)
         private lateinit var permissionPanel: View
         private val rows = linkedMapOf<String, Row>()
         private var order = emptyList<String>()
         private var writable = false
         private var busy = true
+        private var saving = false
+        private var minimum = 1
+        private var maximum = Int.MAX_VALUE
+        private var activeDrag: Drag? = null
+        private var deferred: Bundle? = null
+        private val backgrounds = horizontal()
+        private var backgroundKeys = emptyList<Pair<String?, Int>>()
+        private val backgroundRows = linkedMapOf<Pair<String?, Int>, MaterialCardView>()
+        private val backgroundHint = text("正在读取背景…", 13, secondary = true)
         private data class Drag(val page: Page, val type: String)
 
         init {
@@ -66,8 +82,24 @@ object CardManagementSurface {
             }
             root.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
                 override fun onViewAttachedToWindow(v: View) { v.requestApplyInsets() }
-                override fun onViewDetachedFromWindow(v: View) { action = null }
+                override fun onViewDetachedFromWindow(v: View) { action = null; activeDrag = null; deferred = null }
             })
+            root.setOnDragListener { _, event ->
+                val drag = event.localState as? Drag
+                val own = drag != null && drag.page === this && drag.type in order
+                when (event.action) {
+                    DragEvent.ACTION_DRAG_STARTED -> {
+                        if (own) { activeDrag = drag; rows[drag!!.type]?.card?.alpha = .55f }
+                        own
+                    }
+                    DragEvent.ACTION_DRAG_ENDED -> {
+                        activeDrag?.let { rows[it.type]?.card?.alpha = 1f }; activeDrag = null
+                        deferred?.let { state -> deferred = null; render(state) }
+                        own
+                    }
+                    else -> false
+                }
+            }
             add(MaterialToolbar(context).apply {
                 title = "超级卡包"
                 setTitleTextAppearance(context, com.google.android.material.R.style.TextAppearance_Material3_LabelLarge)
@@ -78,8 +110,8 @@ object CardManagementSurface {
                 setNavigationOnClickListener { emit("back") }
                 (0 until childCount).map { getChildAt(it) }.filterIsInstance<ImageButton>().first().tag = key("back")
             }, bottom = 12)
-            add(text("卡片管理", 32, strong = true), bottom = 8)
-            add(text("让常用卡片排在顺手的位置", 14, secondary = true), bottom = 24)
+            add(text(when(cardType) { "pay" -> "支付卡设置"; "camera" -> "LENS 功能设置"; else -> "卡片管理" }, 32, strong = true), bottom = 8)
+            add(text(when(cardType) { "pay" -> "选择常用支付入口，按习惯排列"; "camera" -> "把常用拍摄模式放在顺手的位置"; else -> "让常用卡片排在顺手的位置" }, 14, secondary = true), bottom = 24)
             val hero = horizontal().apply {
                 setPadding(dp(18), dp(12), dp(12), dp(12))
                 addView(count, LinearLayout.LayoutParams(0, -2, 1f))
@@ -94,31 +126,87 @@ object CardManagementSurface {
                 addView(permission, linear(bottom = 8))
                 addView(button("运行状态与 PAY", "runtime"), linear(bottom = 16))
             }.also { add(it) }
-            add(text("显示顺序", 14, strong = true), bottom = 8)
-            add(text("长按手柄或点箭头排序，至少启用一张卡片。", 13, secondary = true), bottom = 16)
+            add(text(if (cardType == null) "显示顺序" else "卡内功能顺序", 14, strong = true), bottom = 8)
+            add(orderHint, bottom = 16)
             add(list)
-            add(button("手势与唤出", "gestures"), top = 16)
-            add(button("运行状态与 PAY", "runtime_footer").apply { setOnClickListener { emit("runtime") } })
+            if (cardType != null) {
+                add(text("卡片背景", 18, strong = true), top = 24, bottom = 8)
+                add(backgroundHint, bottom = 12)
+                add(HorizontalScrollView(context).apply {
+                    tag = key("backgrounds"); isHorizontalScrollBarEnabled = false
+                    addView(backgrounds)
+                })
+            }
+            add(button(if (cardType == null) "手势与唤出" else "管理所有卡片", if (cardType == null) "gestures" else "management"), top = 16)
+            add(button(if (cardType == "camera") "运行状态与权限" else "运行状态与 PAY", "runtime_footer").apply { setOnClickListener { emit("runtime") } })
         }
 
         fun render(state: Bundle) {
+            if (activeDrag != null) { deferred = Bundle(state); return }
             busy = state.getBoolean("busy"); writable = state.getBoolean("writable")
-            message.text = state.getString("message")
+            saving = state.getBoolean("saving")
+            minimum = state.getInt("minimum", 1); maximum = state.getInt("maximum", Int.MAX_VALUE)
+            setText(orderHint, if (cardType == null) "长按手柄或点箭头排序，至少启用一张卡片。"
+                else "长按手柄或点箭头排序，保留 $minimum–$maximum 项${if (cardType == "camera") "拍摄" else "常用"}功能。")
+            setText(message, state.getString("message").orEmpty())
             progress.visibility = if (busy) View.VISIBLE else View.INVISIBLE
             retry.isEnabled = !busy
+            retry.isClickable = !busy && !saving
             permissionPanel.visibility = if (!state.getBoolean("authorized", writable) && !busy) View.VISIBLE else View.GONE
             val cards = state.getParcelableArrayList<Bundle>("cards").orEmpty()
-            android.util.Log.d("SuperCardManagement", "render busy=$busy writable=$writable cards=${cards.size}")
             val next = cards.map { requireNotNull(it.getString("type")) }
             val enabled = cards.count { it.getBoolean("enabled") }
-            count.text = if (cards.isEmpty()) "等待加载" else "$enabled / ${cards.size} 张已启用"
+            setText(count, if (cards.isEmpty()) "等待加载" else "$enabled / ${cards.size} ${if (cardType == null) "张" else "项"}已启用")
             if (next != order) {
-                list.removeAllViews()
                 rows.keys.retainAll(next.toSet())
-                next.forEach { type -> list.addView(rows.getOrPut(type) { Row(type) }.card, linear(bottom = 12)) }
+                list.reorder(next.map { type -> rows.getOrPut(type) { Row(type) }.card })
                 order = next
             }
             cards.forEachIndexed { index, value -> rows.getValue(next[index]).render(value, index, enabled) }
+            if (cardType != null) renderBackgrounds(state)
+        }
+
+        private fun renderBackgrounds(values: Bundle) {
+            val choices = values.getParcelableArrayList<Bundle>("backgrounds").orEmpty()
+            val keys = choices.map { it.getString("name") to it.getInt("strategy") }
+            val selected = values.getString("backgroundName") to values.getInt("backgroundStrategy", 1)
+            setText(backgroundHint, when {
+                choices.isEmpty() -> "背景暂不可用，现有背景会保留。"
+                selected in keys -> "点选背景即可应用，功能和顺序会保留。"
+                else -> "保留当前背景；点选下方预览可更换。"
+            })
+            if (keys != backgroundKeys) {
+                backgrounds.removeAllViews(); backgroundRows.clear(); backgroundKeys = keys
+                choices.forEachIndexed { index, choice ->
+                    val label = choice.getString("title").orEmpty()
+                    val content = vertical().apply {
+                        addView(ImageView(context).apply {
+                            setImageBitmap(choice.getParcelable<Bitmap>("preview"))
+                            scaleType = ImageView.ScaleType.CENTER_CROP
+                            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                        }, LinearLayout.LayoutParams(dp(96), dp(144)))
+                        addView(text(label, 13).apply { gravity = Gravity.CENTER; minimumHeight = dp(48) })
+                    }
+                    val tile = card(content).apply {
+                        tag = key("background_$index"); isClickable = true; isFocusable = true
+                        contentDescription = label; radius = dp(16).toFloat()
+                        setOnClickListener {
+                            if (writable && !busy && !saving) action?.accept(Bundle().apply {
+                                putString("action", "background"); putString("name", choice.getString("name"))
+                                putInt("strategy", choice.getInt("strategy"))
+                            })
+                        }
+                    }
+                    backgroundRows[keys[index]] = tile
+                    backgrounds.addView(tile, LinearLayout.LayoutParams(dp(100), -2).apply { marginEnd = dp(12) })
+                }
+            }
+            backgroundRows.forEach { (key, tile) ->
+                tile.strokeWidth = if (key == selected) dp(2) else 0
+                tile.isSelected = key == selected
+                tile.isEnabled = writable && !busy; tile.isClickable = tile.isEnabled && !saving
+                tile.stateDescription = if (tile.isSelected) "已选中" else "未选中"
+            }
         }
 
         private inner class Row(val type: String) {
@@ -155,7 +243,7 @@ object CardManagementSurface {
                 header.addView(title, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(12); marginEnd = dp(8) })
                 header.addView(toggle, LinearLayout.LayoutParams(-2, -2))
                 content.addView(header)
-                content.addView(detail, linear(top = 12))
+                content.addView(detail.apply { if (cardType != null) visibility = View.GONE }, linear(top = 12))
                 content.addView(state, linear(top = 6, bottom = 8))
                 val controls = horizontal()
                 controls.addView(grip, LinearLayout.LayoutParams(dp(48), dp(48)))
@@ -165,16 +253,24 @@ object CardManagementSurface {
                 content.addView(controls)
                 card = this@Page.card(content).apply { tag = key("card_$type") }
                 grip.setOnLongClickListener {
-                    val started = writable && !busy && grip.startDragAndDrop(ClipData.newPlainText("卡片排序", ""),
-                        View.DragShadowBuilder(card), Drag(this@Page, type), 0)
-                    android.util.Log.d("SuperCardManagement", "long press type=$type busy=$busy writable=$writable started=$started")
+                    val cardPosition = IntArray(2); val gripPosition = IntArray(2)
+                    card.getLocationOnScreen(cardPosition); grip.getLocationOnScreen(gripPosition)
+                    val shadow = object : View.DragShadowBuilder(card) {
+                        override fun onProvideShadowMetrics(size: Point, touch: Point) {
+                            size.set(card.width, card.height)
+                            touch.set((gripPosition[0] - cardPosition[0] + grip.width / 2).coerceIn(0, card.width),
+                                (gripPosition[1] - cardPosition[1] + grip.height / 2).coerceIn(0, card.height))
+                        }
+                    }
+                    val started = writable && !busy && !saving && grip.startDragAndDrop(ClipData.newPlainText("卡片排序", ""),
+                        shadow, Drag(this@Page, type), 0)
                     started
                 }
                 up.setOnClickListener { move(-1) }; down.setOnClickListener { move(1) }
-                settings.setOnClickListener { if (!busy) emit("settings", type) }
+                settings.setOnClickListener { if (!busy && !saving) emit("settings", type) }
                 card.setOnDragListener { _, event ->
                     val drag = event.localState as? Drag
-                    val accepted = writable && !busy && drag != null && drag.page === this@Page && drag.type != type && drag.type in order
+                    val accepted = writable && !busy && !saving && drag != null && drag.page === this@Page && drag.type != type && drag.type in order
                     when (event.action) {
                         DragEvent.ACTION_DRAG_STARTED -> accepted
                         DragEvent.ACTION_DRAG_ENTERED -> { if (accepted) card.strokeWidth = dp(2); accepted }
@@ -190,25 +286,33 @@ object CardManagementSurface {
             }
 
             fun render(value: Bundle, index: Int, enabledCount: Int) {
-                val label = value.getString("title").orEmpty(); title.text = label
+                val label = value.getString("title").orEmpty(); setText(title, label)
                 val checked = value.getBoolean("enabled")
-                state.text = "${index + 1} · ${if (checked) "已启用" else "未启用，保留当前位置"}"
-                toggle.setOnCheckedChangeListener(null); toggle.isChecked = checked
-                toggle.contentDescription = "$label，启用卡片"
-                toggle.isEnabled = writable && !busy && (!checked || enabledCount > 1)
-                toggle.setOnCheckedChangeListener { _, selected -> if (writable && !busy) emit("toggle", type, selected) }
+                setText(state, "${index + 1} · ${if (checked) "已启用" else "未启用，保留当前位置"}")
+                toggle.setOnCheckedChangeListener(null)
+                if (toggle.isChecked != checked) toggle.isChecked = checked
+                toggle.contentDescription = "$label，${if (cardType == null) "启用卡片" else "启用功能"}"
+                toggle.isEnabled = writable && !busy && (if (checked) enabledCount > minimum else enabledCount < maximum)
+                toggle.isClickable = toggle.isEnabled && !saving
+                toggle.setOnCheckedChangeListener { _, selected ->
+                    if (writable && !busy && !saving) emit("toggle", type, selected)
+                    else if (toggle.isChecked != checked) toggle.isChecked = checked
+                }
                 grip.isEnabled = writable && !busy && order.size > 1
+                grip.isClickable = grip.isEnabled && !saving; grip.isLongClickable = grip.isClickable
                 grip.contentDescription = "$label，长按拖动排序"
                 up.isEnabled = writable && !busy && index > 0; up.contentDescription = "$label，上移"
                 down.isEnabled = writable && !busy && index < order.lastIndex; down.contentDescription = "$label，下移"
-                settings.visibility = if (type in setOf("pay", "camera", "dhu", "staging")) View.VISIBLE else View.GONE
+                up.isClickable = up.isEnabled && !saving; down.isClickable = down.isEnabled && !saving
+                settings.visibility = if (cardType == null && type in setOf("pay", "camera", "dhu", "staging")) View.VISIBLE else View.GONE
                 settings.isEnabled = !busy
+                settings.isClickable = !busy && !saving
                 settings.contentDescription = "$label，${settings.text}"
             }
 
             private fun move(delta: Int) {
                 val target = order.getOrNull(order.indexOf(type) + delta) ?: return
-                if (writable && !busy) emit("move", type, target = target)
+                if (writable && !busy && !saving) emit("move", type, target = target)
             }
         }
 
@@ -217,7 +321,7 @@ object CardManagementSurface {
                 putString("action", kind); putString("type", type); putBoolean("value", value); putString("target", target)
             })
         }
-        private fun icon(type: String) = when (type) {
+        private fun icon(type: String): Int = if (cardType == "pay") R.drawable.pay_ic_wallet else if (cardType == "camera") R.drawable.lens_ic_camera else when (type) {
             "pay" -> R.drawable.pay_ic_wallet; "camera" -> R.drawable.lens_ic_camera
             "dhu" -> R.drawable.dhu_ic_school; "memory" -> R.drawable.management_ic_memory
             "staging" -> R.drawable.management_ic_ticket; else -> R.drawable.settings_ic_cards
@@ -267,6 +371,7 @@ object CardManagementSurface {
         private fun color(attr: Int) = MaterialColors.getColor(context, attr, "Card management")
         private fun gutter() = context.resources.getDimensionPixelSize(R.dimen.settings_page_gutter)
         private fun dp(value: Int) = (value * context.resources.displayMetrics.density + .5f).toInt()
-        private fun key(name: String) = "management_$name"
+        private fun setText(view: TextView, value: String) { if (view.text.toString() != value) view.text = value }
+        private fun key(name: String) = "${if (cardType == null) "management" else "function"}_$name"
     }
 }

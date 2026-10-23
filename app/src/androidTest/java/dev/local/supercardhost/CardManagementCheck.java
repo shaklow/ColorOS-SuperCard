@@ -11,7 +11,8 @@ import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.view.InputDevice;
-import android.view.DragEvent;
+import android.animation.ValueAnimator;
+import android.view.ViewTreeObserver;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.ScrollView;
@@ -37,10 +38,13 @@ final class CardManagementCheck {
         String before = Settings.Secure.getString(context.getContentResolver(), KEY);
         boolean granted = context.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED;
         Activity page = null;
-        Instrumentation.ActivityMonitor editor = test.addMonitor("com.vivo.card.setting.CardEditActivity", null, true);
+        Instrumentation.ActivityMonitor editor = test.addMonitor(pkg + ".CardFunctionSettingsActivity", null, true);
+        String animationScale = Settings.Global.getString(context.getContentResolver(), "animator_duration_scale");
         test.getUiAutomation().adoptShellPermissionIdentity();
         try {
             shell("pm grant " + pkg + " android.permission.WRITE_SECURE_SETTINGS");
+            shell("settings put global animator_duration_scale 1");
+            await(ValueAnimator::areAnimatorsEnabled, "Animation scale did not reach the test process");
             String sample = "{\"future\":{\"keep\":17},\"cards\":["
                     + "{\"type\":\"pay\",\"enable\":true,\"skinName\":\"custom\",\"functions\":[{\"type\":\"wx_pay\",\"enable\":false}]},"
                     + "{\"type\":\"memory\",\"enable\":true},{\"type\":\"staging\",\"enable\":true},"
@@ -55,12 +59,18 @@ final class CardManagementCheck {
                 if (!toggle.getContext().getClassLoader().getClass().getName().equals("dalvik.system.DelegateLastClassLoader"))
                     throw new AssertionError("Management UI did not use the isolated archive");
                 toggle.performClick();
+                if (!((CompoundButton) toggle).isChecked() || !toggle.isEnabled())
+                    throw new AssertionError("Switch flashed back or changed disabled colors during save");
             });
             await(() -> enabled("camera") && ready(current, "up_camera"), "Card toggle was not confirmed by the provider");
+            MotionWatch arrowMotion = new MotionWatch(current, "camera");
             main(() -> named(current, "up_camera").performClick());
             await(() -> order("pay", "memory", "camera", "staging", "dhu") && ready(current, "down_pay"), "Up arrow did not persist order");
+            arrowMotion.finish();
+            MotionWatch dragMotion = new MotionWatch(current, "pay");
             drag(current, "pay", "memory");
             await(() -> order("memory", "pay", "camera", "staging", "dhu") && ready(current, "down_pay"), "Drag/drop did not persist order: " + json());
+            dragMotion.finish();
             JSONObject saved = json();
             if (saved.getJSONObject("future").getInt("keep") != 17) throw new AssertionError("Unknown root data was lost");
             JSONObject pay = card("pay"), camera = card("camera");
@@ -79,7 +89,7 @@ final class CardManagementCheck {
                             && "4 / 5 张已启用".contentEquals(((TextView) named(current, "count")).getText())),
                     "External provider edit was not reflected in the management UI");
             main(() -> named(current, "settings_pay").performClick());
-            if (editor.getHits() != 1) throw new AssertionError("Original PAY function editor was not reached");
+            if (editor.getHits() != 1) throw new AssertionError("Material PAY function editor was not reached");
             main(current::finish); test.waitForIdleSync(); page = null;
             android.content.pm.ActivityInfo alias = context.getPackageManager().getActivityInfo(
                     new ComponentName(pkg, "com.vivo.card.setting.CardSettingActivity"), 0);
@@ -90,6 +100,8 @@ final class CardManagementCheck {
             if (!(pkg + ".CardManagementActivity").equals(page.getClass().getName()) || !order("memory", "pay", "camera", "staging", "dhu"))
                 throw new AssertionError("Legacy entry reset the saved card order");
             main(legacy::finish); test.waitForIdleSync(); page = null;
+            test.removeMonitor(editor);
+            functionEditors();
             write(null);
             page = start(pkg + ".CardManagementActivity");
             Activity fresh = page;
@@ -99,6 +111,8 @@ final class CardManagementCheck {
             try {
                 if (page != null) { Activity current = page; main(current::finish); test.waitForIdleSync(); }
                 write(before);
+                if (animationScale == null) shell("settings delete global animator_duration_scale");
+                else shell("settings put global animator_duration_scale " + Float.parseFloat(animationScale));
                 if (!granted) shell("pm revoke " + pkg + " android.permission.WRITE_SECURE_SETTINGS");
             } finally { test.removeMonitor(editor); test.getUiAutomation().dropShellPermissionIdentity(); }
         }
@@ -125,11 +139,8 @@ final class CardManagementCheck {
             grip.setOnTouchListener((view, event) -> {
                 android.util.Log.i("CardManagementCheck", "handle input=" + event.getActionMasked() + " enabled=" + view.isEnabled());
                 if (event.getActionMasked() == MotionEvent.ACTION_DOWN) touched.countDown();
+                if (event.getActionMasked() == MotionEvent.ACTION_CANCEL) dragging.countDown();
                 return false;
-            });
-            ((View) named(page, "scroll").getParent()).setOnDragListener((view, event) -> {
-                if (event.getAction() == DragEvent.ACTION_DRAG_STARTED) dragging.countDown();
-                return false; // Observe the system event; the existing child cards own acceptance and drop.
             });
             center(grip, from); center(named(page, "card_" + target), to);
             android.util.Log.i("CardManagementCheck", "drag " + from[0] + "," + from[1] + " to " + to[0] + "," + to[1]);
@@ -150,9 +161,104 @@ final class CardManagementCheck {
             try { pointer(down, MotionEvent.ACTION_UP, to[0], to[1]); }
             finally { main(() -> {
                 named(page, "drag_" + source).setOnTouchListener(null);
-                ((View) named(page, "scroll").getParent()).setOnDragListener(null);
             }); }
         }
+    }
+
+    private String prefix(Activity page) {
+        return page.getClass().getName().endsWith(".CardFunctionSettingsActivity") ? "function_" : "management_";
+    }
+
+    private final class MotionWatch {
+        private final Activity page;
+        private final View row;
+        private final java.util.concurrent.atomic.AtomicBoolean moved = new java.util.concurrent.atomic.AtomicBoolean();
+        private final java.util.concurrent.atomic.AtomicInteger detached = new java.util.concurrent.atomic.AtomicInteger();
+        private final ViewTreeObserver.OnPreDrawListener frames;
+        private final View.OnAttachStateChangeListener attachment = new View.OnAttachStateChangeListener() {
+            public void onViewAttachedToWindow(View view) { }
+            public void onViewDetachedFromWindow(View view) { detached.incrementAndGet(); }
+        };
+        MotionWatch(Activity page, String type) throws Exception {
+            this.page = page; row = named(page, "card_" + type);
+            frames = () -> { if (Math.abs(row.getTranslationY()) > 1) moved.set(true); return true; };
+            main(() -> { page.getWindow().getDecorView().getViewTreeObserver().addOnPreDrawListener(frames); row.addOnAttachStateChangeListener(attachment); });
+        }
+        void finish() throws Exception {
+            try {
+                await(() -> moved.get() && onMain(() -> Math.abs(row.getTranslationY()) < .1f && row.getAlpha() == 1f), "Reorder did not animate and settle");
+                if (detached.get() != 0) throw new AssertionError("Reorder detached its existing row");
+            } finally { main(() -> { page.getWindow().getDecorView().getViewTreeObserver().removeOnPreDrawListener(frames); row.removeOnAttachStateChangeListener(attachment); }); }
+        }
+    }
+
+    private void functionEditors() throws Exception {
+        JSONObject fixture = new JSONObject().put("future", new JSONObject().put("keep", 17));
+        JSONArray cards = new JSONArray();
+        String[][] sets = {{"wx_scan", "wx_pay", "alipay_scan", "alipay_pay", "wx_ride", "alipay_ride", "wx2_pay"},
+                {"take_photo", "portrait", "video", "night_view", "mirror", "master", "panoramic"}};
+        for (int i = 0; i < sets.length; i++) {
+            JSONArray functions = new JSONArray();
+            for (int j = 0; j < sets[i].length; j++) functions.put(new JSONObject().put("type", sets[i][j]).put("enable", j < 4)
+                    .put("support", true).put("info", "launch:" + sets[i][j]).put("future", 17));
+            functions.put(new JSONObject().put("type", "future_native").put("enable", false).put("support", false).put("opaque", "keep"));
+            cards.put(new JSONObject().put("type", i == 0 ? "pay" : "camera").put("enable", i == 0).put("skinName", "custom").put("functions", functions));
+        }
+        fixture.put("cards", cards); write(fixture.toString());
+        android.content.pm.ActivityInfo alias = context.getPackageManager().getActivityInfo(new ComponentName(pkg, "com.vivo.card.setting.CardEditActivity"), 0);
+        if (!(pkg + ".CardFunctionSettingsActivity").equals(alias.targetActivity)) throw new AssertionError("Legacy function entry was not redirected");
+        for (String type : new String[]{"pay", "camera"}) {
+            Activity page = test.startActivitySync(new Intent().setClassName(pkg, "com.vivo.card.setting.CardEditActivity")
+                    .putExtra("mCardType", type).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            try {
+                if (!(pkg + ".CardFunctionSettingsActivity").equals(page.getClass().getName())) throw new AssertionError("Function alias reached an old editor");
+                String added = type.equals("pay") ? "wx_ride" : "mirror";
+                String first = type.equals("pay") ? "wx_scan" : "take_photo";
+                String second = type.equals("pay") ? "wx_pay" : "portrait";
+                await(() -> ready(page, "toggle_" + added), "Function editor did not load " + type);
+                if (type.equals("camera") && onMain(() -> named(page, "toggle_take_photo").isEnabled())) throw new AssertionError("LENS minimum was not retained");
+                main(() -> { named(page, "toggle_" + added).performClick();
+                    if (!((CompoundButton) named(page, "toggle_" + added)).isChecked()) throw new AssertionError("Function switch flashed back"); });
+                await(() -> functionEnabled(type, added) && ready(page, "up_" + added), "Function enable did not persist");
+                MotionWatch arrow = new MotionWatch(page, added);
+                main(() -> named(page, "up_" + added).performClick());
+                await(() -> functionIndex(type, added) == 3 && ready(page, "down_" + first), "Function arrow did not persist");
+                arrow.finish();
+                MotionWatch dragging = new MotionWatch(page, first);
+                drag(page, first, second);
+                await(() -> functionIndex(type, first) == 1 && ready(page, "down_" + first), "Function drag did not persist");
+                dragging.finish();
+                JSONObject card = card(type); JSONArray functions = card.getJSONArray("functions");
+                if (!"custom".equals(card.getString("skinName")) || !"keep".equals(functions.getJSONObject(functions.length() - 1).getString("opaque")))
+                    throw new AssertionError("Function edits changed skin or hidden data");
+                JSONObject changed = json();
+                JSONArray changedFunctions = changed.getJSONArray("cards").getJSONObject(type.equals("pay") ? 0 : 1).getJSONArray("functions");
+                for (int i = 0; i < changedFunctions.length(); i++) if (added.equals(changedFunctions.getJSONObject(i).getString("type"))) changedFunctions.getJSONObject(i).put("enable", false);
+                write(changed.toString());
+                await(() -> ready(page, "toggle_" + added) && onMain(() -> !((CompoundButton) named(page, "toggle_" + added)).isChecked()), "External function edit did not refresh");
+                String beforeBackground = card(type).getJSONArray("functions").toString();
+                await(() -> ready(page, "background_0"), "New background previews did not load");
+                main(() -> {
+                    android.view.ViewGroup tile = (android.view.ViewGroup) named(page, "background_0");
+                    android.widget.ImageView preview = (android.widget.ImageView) ((android.view.ViewGroup) tile.getChildAt(0)).getChildAt(0);
+                    if (preview.getDrawable() == null) throw new AssertionError("Bundled background preview is blank");
+                    named(page, "background_0").performClick();
+                    if (!named(page, "background_0").isSelected()) throw new AssertionError("Background selection flashed back");
+                });
+                await(() -> { try { return !"custom".equals(card(type).getString("skinName")) && ready(page, "background_0"); } catch (Exception e) { return false; } }, "Background selection did not persist");
+                if (card(type).getInt("skinLoaderStrategy") != 1 || !beforeBackground.equals(card(type).getJSONArray("functions").toString()))
+                    throw new AssertionError("Background picker changed function configuration");
+            } finally { main(page::finish); test.waitForIdleSync(); }
+        }
+        if (json().getJSONObject("future").getInt("keep") != 17) throw new AssertionError("Function editor lost unknown root data");
+    }
+    private int functionIndex(String type, String key) {
+        try { JSONArray functions = card(type).getJSONArray("functions"); for (int i = 0; i < functions.length(); i++) if (key.equals(functions.getJSONObject(i).getString("type"))) return i; }
+        catch (Exception ignored) { } return -1;
+    }
+    private boolean functionEnabled(String type, String key) {
+        try { return card(type).getJSONArray("functions").getJSONObject(functionIndex(type, key)).getBoolean("enable"); }
+        catch (Exception ignored) { return false; }
     }
 
     private void pointer(long down, int action, float x, float y) {
@@ -170,14 +276,14 @@ final class CardManagementCheck {
     }
     private Activity start(String name) { return test.startActivitySync(new Intent().setClassName(pkg, name).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); }
     private View named(Activity page, String name) {
-        View value = page.getWindow().getDecorView().findViewWithTag("management_" + name);
+        View value = page.getWindow().getDecorView().findViewWithTag(prefix(page) + name);
         if (value == null) throw new AssertionError("Missing management control: " + name);
         return value;
     }
     private boolean ready(Activity page, String name) {
         return onMain(() -> {
-            View value = page.getWindow().getDecorView().findViewWithTag("management_" + name);
-            return value != null && value.isEnabled() && value.isAttachedToWindow() && value.getWidth() > 0;
+            View value = page.getWindow().getDecorView().findViewWithTag(prefix(page) + name);
+            return value != null && value.isEnabled() && value.isClickable() && value.isAttachedToWindow() && value.getWidth() > 0;
         });
     }
     private JSONObject json() throws Exception { return new JSONObject(Settings.Secure.getString(context.getContentResolver(), KEY)); }
