@@ -1,60 +1,60 @@
 package dev.local.supercardui
 
 import android.content.Context
-import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
-import android.view.Gravity
 import android.view.View
+import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.FrameLayout
-import android.widget.LinearLayout
 import androidx.appcompat.view.ContextThemeWrapper
-import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.color.MaterialColors
 import java.util.function.Consumer
 
-/** Framework-only surface contract for the independent Kotlin card host. */
+/** Original-size card surface. Swipes belong to the host; accessibility retains page actions. */
 object NativeCardSurface {
     @JvmStatic fun create(context: Context): View = Page(ContextThemeWrapper(context, R.style.Theme_DhuUi)).root
     @JvmStatic fun bind(root: View, action: Consumer<Bundle>) { (root.tag as Page).action = action }
     @JvmStatic fun render(root: View, state: Bundle) = (root.tag as Page).render(state)
     private class Page(val context: Context) {
         var action: Consumer<Bundle>? = null
-        val root = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL; tag = this@Page
-            background = GradientDrawable().apply {
-                setColor(MaterialColors.getColor(context, com.google.android.material.R.attr.colorSurfaceContainerLow, 0))
-                cornerRadius = context.resources.getDimension(R.dimen.card_surface_corner)
-            }
-            clipToOutline = true
-        }
-        private val previous = button("上一张", "previous")
-        private val next = button("下一张", "next")
-        init {
-            root.addView(MaterialCardView(context).apply {
+        private var index = 0
+        private var count = 0
+        val root = FrameLayout(context).apply {
+            tag = this@Page; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            addView(MaterialCardView(context).apply {
                 radius = context.resources.getDimension(R.dimen.card_surface_corner)
-                strokeWidth = 0; setCardBackgroundColor(MaterialColors.getColor(context, com.google.android.material.R.attr.colorSurfaceContainerLow, 0))
+                strokeWidth = 0; cardElevation = 0f
+                clipToOutline = true
+                setCardBackgroundColor(MaterialColors.getColor(context, com.google.android.material.R.attr.colorSurfaceContainerLow, 0))
                 addView(FrameLayout(context).apply { tag = "native_content" }, FrameLayout.LayoutParams(-1, -1))
-            }, LinearLayout.LayoutParams(-1, 0, 1f))
-            root.addView(LinearLayout(context).apply {
-                gravity = Gravity.CENTER
-                for (button in listOf(previous, next, button("收起", "close")))
-                    addView(button, LinearLayout.LayoutParams(0, dp(48), 1f))
-            }, LinearLayout.LayoutParams(-1, dp(56)))
-            root.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            }, FrameLayout.LayoutParams(-1, -1))
+            accessibilityDelegate = object : View.AccessibilityDelegate() {
+                override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
+                    super.onInitializeAccessibilityNodeInfo(host, info)
+                    info.isScrollable = count > 1
+                    if (index > 0) info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD)
+                    if (index + 1 < count) info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD)
+                    info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_DISMISS)
+                }
+                override fun performAccessibilityAction(host: View, value: Int, args: Bundle?): Boolean {
+                    val name = when (value) {
+                        AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD -> if (index > 0) "previous" else null
+                        AccessibilityNodeInfo.ACTION_SCROLL_FORWARD -> if (index + 1 < count) "next" else null
+                        AccessibilityNodeInfo.ACTION_DISMISS -> "close"
+                        else -> return super.performAccessibilityAction(host, value, args)
+                    } ?: return false
+                    action?.accept(Bundle().apply { putString("action", name) }) ?: return false
+                    return true
+                }
+            }
+            addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
                 override fun onViewAttachedToWindow(view: View) = Unit
                 override fun onViewDetachedFromWindow(view: View) { action = null }
             })
         }
         fun render(state: Bundle) {
-            previous.isEnabled = state.getInt("index") > 0
-            next.isEnabled = state.getInt("index") + 1 < state.getInt("count")
-            root.contentDescription = "${state.getString("title", "卡包")}，${state.getInt("index") + 1}/${state.getInt("count")}"
+            index = state.getInt("index"); count = state.getInt("count")
+            root.contentDescription = state.getString("title", "卡包") + "，" + (index + 1) + "/" + count
         }
-        private fun button(label: String, name: String) = MaterialButton(context, null, androidx.appcompat.R.attr.borderlessButtonStyle).apply {
-            text = label; tag = "native_$name"; minimumWidth = 0; minWidth = 0
-            setPadding(0, 0, 0, 0); setOnClickListener { action?.accept(Bundle().apply { putString("action", name) }) }
-        }
-        private fun dp(value: Int) = (value * context.resources.displayMetrics.density + .5f).toInt()
     }
 }

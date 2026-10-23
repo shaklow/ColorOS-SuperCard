@@ -3,6 +3,22 @@ import io
 from pathlib import Path
 import sys
 import zipfile
+import struct
+
+
+def defined_classes(dex):
+    """Read definitions, not references: compile-only hidden framework ABIs must never ship."""
+    def word(offset):
+        return struct.unpack_from('<I', dex, offset)[0]
+    strings, types, count, classes = word(60), word(68), word(96), word(100)
+    for index in range(count):
+        name_index = word(types + 4 * word(classes + 32 * index))
+        offset = word(strings + 4 * name_index)
+        while dex[offset] & 128:
+            offset += 1
+        offset += 1
+        end = dex.index(0, offset)
+        yield dex[offset:end].decode('utf-8')
 
 
 def verify_archive(host_apk):
@@ -10,8 +26,12 @@ def verify_archive(host_apk):
         archive = host.read('assets/dhu-ui.apk')
         for name in host.namelist():
             if name.startswith('classes') and name.endswith('.dex'):
-                if b'Lcom/google/android/material/button/MaterialButton;' in host.read(name):
+                dex = host.read(name)
+                if b'Lcom/google/android/material/button/MaterialButton;' in dex:
                     raise ValueError('Material Components leaked into the host DEX graph')
+                forbidden = {'Landroid/view/InputChannel;', 'Landroid/view/InputEventReceiver;'}
+                if forbidden.intersection(defined_classes(dex)):
+                    raise ValueError('Compile-only platform input classes leaked into the APK')
     with zipfile.ZipFile(io.BytesIO(archive)) as ui:
         names = ui.namelist()
         if not {'AndroidManifest.xml', 'resources.arsc', 'classes.dex'}.issubset(names):

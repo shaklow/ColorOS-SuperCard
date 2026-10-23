@@ -18,6 +18,10 @@
 !/dhu-ui/build.gradle.kts
 !/dhu-ui/src/
 !/dhu-ui/src/**
+!/framework-stubs/
+!/framework-stubs/build.gradle.kts
+!/framework-stubs/src/
+!/framework-stubs/src/**
 !/gradle.properties
 !/root-backend/
 !/root-backend/**

@@ -53,12 +53,12 @@ public final class SettingsStartupTest extends Instrumentation {
             new GestureSettingsCheck(this).run();
             checkFloatingWindow();
             checkFloatingSessions();
-            try (NativeCoreCheck nativeCore = new NativeCoreCheck(this)) {
+            try (NativeCoreCheck nativeCore = new NativeCoreCheck(this, secureNative)) {
                 nativeCore.run();
                 checkLensDisplay(nativeCore.container());
             }
             result.putString("stream", "Settings startup: 4 entry points passed\nCard management: persistence, ordering and legacy entry passed\nGesture settings: session, preview ownership and new page passed\nFloating cards: window embedding passed\nFloating lifecycle: detach/reattach passed\nLens display: embedded activity and touch passed\nRoot display: callback wrapper passed\nNative core: secure window, switching and lock cleanup passed\n"
-                    + (secureNative ? "Secure native display: actual secure secondary display and touch passed\n" : ""));
+                    + (secureNative ? "Secure native display: actual secure secondary display and touch passed\nNative gestures: monitored edge pull, swipe, cancellation and animations passed\n" : ""));
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
             result.putString("stream", android.util.Log.getStackTraceString(error));

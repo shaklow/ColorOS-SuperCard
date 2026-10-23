@@ -8,10 +8,11 @@ internal class NativeCardDeck<C : AutoCloseable>(
     private var order = emptyList<String>()
     var selected: String? = null; private set
     private var content: C? = null
+    private val retired = mutableListOf<C>()
     var generation = 0L; private set
     private var closed = false
 
-    fun show(cards: List<String>, requested: String? = null) {
+    fun show(cards: List<String>, requested: String? = null, retainPrevious: Boolean = false) {
         check(!closed)
         require(cards.isNotEmpty() && cards.distinct().size == cards.size)
         val type = requested?.takeIf { it in cards } ?: selected?.takeIf { it in cards } ?: cards.first()
@@ -21,17 +22,20 @@ internal class NativeCardDeck<C : AutoCloseable>(
         catch (error: Throwable) { safely(next); throw error }
         val previous = content
         generation++; content = next; selected = type; order = cards.toList()
-        previous?.let(::safely)
+        previous?.let { if (retainPrevious) retired.add(it) else safely(it) }
     }
-    fun move(delta: Int) {
+    fun target(delta: Int): String? = if (closed || content == null) null
+        else order.getOrNull(order.indexOf(selected) + delta)
+    fun move(delta: Int, retainPrevious: Boolean = false) {
         if (closed || content == null || order.size < 2) return
         val index = order.indexOf(selected)
-        show(order, order[(index + delta).coerceIn(0, order.lastIndex)])
+        show(order, order[(index + delta).coerceIn(0, order.lastIndex)], retainPrevious)
     }
+    fun releaseRetired() { val previous = retired.toList(); retired.clear(); previous.forEach(::safely) }
     fun current(token: Long) = !closed && content != null && generation == token
     fun hide() {
         generation++; val previous = content; content = null; selected = null
-        try { clear() } finally { previous?.let(::safely) }
+        try { clear() } finally { try { releaseRetired() } finally { previous?.let(::safely) } }
     }
     override fun close() { if (!closed) { closed = true; hide() } }
     private fun safely(value: C) { try { value.close() } catch (error: Throwable) { failed(error) } }

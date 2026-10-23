@@ -3,6 +3,7 @@ dependencyResolutionManagement { repositories { google(); mavenCentral() } }
 rootProject.name = "ColorOS-SuperCardHost"
 include(":app")
 include(":dhu-ui")
+include(":framework-stubs")
 if (providers.gradleProperty("payProbe").orNull == "true") {
     include(":payProbe")
     project(":payProbe").projectDir = file("tools/pay-probe-app")
