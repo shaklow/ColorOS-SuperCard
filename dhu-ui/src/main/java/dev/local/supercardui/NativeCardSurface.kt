@@ -43,7 +43,7 @@ object NativeCardSurface {
             next.isEnabled = state.getInt("index") + 1 < state.getInt("count")
             root.contentDescription = "${state.getString("title", "卡包")}，${state.getInt("index") + 1}/${state.getInt("count")}"
         }
-        private fun button(label: String, name: String) = MaterialButton(context, null, com.google.android.material.R.attr.materialButtonTextButtonStyle).apply {
+        private fun button(label: String, name: String) = MaterialButton(context, null, androidx.appcompat.R.attr.borderlessButtonStyle).apply {
             text = label; tag = "native_$name"; minimumWidth = 0; minWidth = 0
             setPadding(0, 0, 0, 0); setOnClickListener { action?.accept(Bundle().apply { putString("action", name) }) }
         }
