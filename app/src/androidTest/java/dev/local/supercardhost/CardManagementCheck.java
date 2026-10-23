@@ -236,6 +236,18 @@ final class CardManagementCheck {
                 for (int i = 0; i < changedFunctions.length(); i++) if (added.equals(changedFunctions.getJSONObject(i).getString("type"))) changedFunctions.getJSONObject(i).put("enable", false);
                 write(changed.toString());
                 await(() -> ready(page, "toggle_" + added) && onMain(() -> !((CompoundButton) named(page, "toggle_" + added)).isChecked()), "External function edit did not refresh");
+                String beforeBackground = card(type).getJSONArray("functions").toString();
+                await(() -> ready(page, "background_0"), "New background previews did not load");
+                main(() -> {
+                    android.view.ViewGroup tile = (android.view.ViewGroup) named(page, "background_0");
+                    android.widget.ImageView preview = (android.widget.ImageView) ((android.view.ViewGroup) tile.getChildAt(0)).getChildAt(0);
+                    if (preview.getDrawable() == null) throw new AssertionError("Bundled background preview is blank");
+                    named(page, "background_0").performClick();
+                    if (!named(page, "background_0").isSelected()) throw new AssertionError("Background selection flashed back");
+                });
+                await(() -> { try { return !"custom".equals(card(type).getString("skinName")) && ready(page, "background_0"); } catch (Exception e) { return false; } }, "Background selection did not persist");
+                if (card(type).getInt("skinLoaderStrategy") != 1 || !beforeBackground.equals(card(type).getJSONArray("functions").toString()))
+                    throw new AssertionError("Background picker changed function configuration");
             } finally { main(page::finish); test.waitForIdleSync(); }
         }
         if (json().getJSONObject("future").getInt("keep") != 17) throw new AssertionError("Function editor lost unknown root data");

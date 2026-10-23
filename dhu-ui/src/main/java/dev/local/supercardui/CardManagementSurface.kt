@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Typeface
 import android.graphics.Point
+import android.graphics.Bitmap
 import android.os.Bundle
 import android.view.DragEvent
 import android.view.Gravity
@@ -61,6 +62,10 @@ object CardManagementSurface {
         private var maximum = Int.MAX_VALUE
         private var activeDrag: Drag? = null
         private var deferred: Bundle? = null
+        private val backgrounds = horizontal()
+        private var backgroundKeys = emptyList<Pair<String?, Int>>()
+        private val backgroundRows = linkedMapOf<Pair<String?, Int>, MaterialCardView>()
+        private val backgroundHint = text("正在读取背景…", 13, secondary = true)
         private data class Drag(val page: Page, val type: String)
 
         init {
@@ -124,6 +129,14 @@ object CardManagementSurface {
             add(text(if (cardType == null) "显示顺序" else "卡内功能顺序", 14, strong = true), bottom = 8)
             add(orderHint, bottom = 16)
             add(list)
+            if (cardType != null) {
+                add(text("卡片背景", 18, strong = true), top = 24, bottom = 8)
+                add(backgroundHint, bottom = 12)
+                add(HorizontalScrollView(context).apply {
+                    tag = key("backgrounds"); isHorizontalScrollBarEnabled = false
+                    addView(backgrounds)
+                })
+            }
             add(button(if (cardType == null) "手势与唤出" else "管理所有卡片", if (cardType == null) "gestures" else "management"), top = 16)
             add(button(if (cardType == "camera") "运行状态与权限" else "运行状态与 PAY", "runtime_footer").apply { setOnClickListener { emit("runtime") } })
         }
@@ -150,6 +163,50 @@ object CardManagementSurface {
                 order = next
             }
             cards.forEachIndexed { index, value -> rows.getValue(next[index]).render(value, index, enabled) }
+            if (cardType != null) renderBackgrounds(state)
+        }
+
+        private fun renderBackgrounds(values: Bundle) {
+            val choices = values.getParcelableArrayList<Bundle>("backgrounds").orEmpty()
+            val keys = choices.map { it.getString("name") to it.getInt("strategy") }
+            val selected = values.getString("backgroundName") to values.getInt("backgroundStrategy", 1)
+            setText(backgroundHint, when {
+                choices.isEmpty() -> "背景暂不可用，现有背景会保留。"
+                selected in keys -> "点选背景即可应用，功能和顺序会保留。"
+                else -> "保留当前背景；点选下方预览可更换。"
+            })
+            if (keys != backgroundKeys) {
+                backgrounds.removeAllViews(); backgroundRows.clear(); backgroundKeys = keys
+                choices.forEachIndexed { index, choice ->
+                    val label = choice.getString("title").orEmpty()
+                    val content = vertical().apply {
+                        addView(ImageView(context).apply {
+                            setImageBitmap(choice.getParcelable<Bitmap>("preview"))
+                            scaleType = ImageView.ScaleType.CENTER_CROP
+                            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                        }, LinearLayout.LayoutParams(dp(96), dp(144)))
+                        addView(text(label, 13).apply { gravity = Gravity.CENTER; minimumHeight = dp(48) })
+                    }
+                    val tile = card(content).apply {
+                        tag = key("background_$index"); isClickable = true; isFocusable = true
+                        contentDescription = label; radius = dp(16).toFloat()
+                        setOnClickListener {
+                            if (writable && !busy && !saving) action?.accept(Bundle().apply {
+                                putString("action", "background"); putString("name", choice.getString("name"))
+                                putInt("strategy", choice.getInt("strategy"))
+                            })
+                        }
+                    }
+                    backgroundRows[keys[index]] = tile
+                    backgrounds.addView(tile, LinearLayout.LayoutParams(dp(100), -2).apply { marginEnd = dp(12) })
+                }
+            }
+            backgroundRows.forEach { (key, tile) ->
+                tile.strokeWidth = if (key == selected) dp(2) else 0
+                tile.isSelected = key == selected
+                tile.isEnabled = writable && !busy; tile.isClickable = tile.isEnabled && !saving
+                tile.stateDescription = if (tile.isSelected) "已选中" else "未选中"
+            }
         }
 
         private inner class Row(val type: String) {

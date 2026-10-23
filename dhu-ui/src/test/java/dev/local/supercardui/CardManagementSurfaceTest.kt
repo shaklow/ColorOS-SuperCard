@@ -135,6 +135,31 @@ class CardManagementSurfaceTest {
         activity.finish()
     }
 
+    @Test fun backgroundPickerPreservesSelectionWhileSavingAndReusesTiles() {
+        val root = CardManagementSurface.createFunctions(RuntimeEnvironment.getApplication(), "pay")
+        val events = mutableListOf<Bundle>()
+        CardManagementSurface.bind(root, Consumer { events.add(it) })
+        val values = state().apply {
+            putString("backgroundName", "second"); putInt("backgroundStrategy", 1)
+            putParcelableArrayList("backgrounds", arrayListOf("first", "second").mapIndexed { i, name -> Bundle().apply {
+                putString("name", name); putInt("strategy", 1); putString("title", "背景 ${i + 1}")
+            } }.let { ArrayList(it) })
+        }
+        CardManagementSurface.render(root, values)
+        val first = root.findViewWithTag<View>("function_background_0")
+        assertFalse(first.isSelected)
+        assertTrue(root.findViewWithTag<View>("function_background_1").isSelected)
+        first.performClick(); assertEquals("background", events.single().getString("action"))
+        assertEquals("first", events.single().getString("name")); assertEquals(1, events.single().getInt("strategy"))
+        values.putBoolean("saving", true); values.putString("backgroundName", "first")
+        CardManagementSurface.render(root, values)
+        assertSame(first, root.findViewWithTag<View>("function_background_0")); assertTrue(first.isSelected)
+        assertTrue(first.isEnabled); assertFalse(first.isClickable)
+        first.performClick(); assertEquals(1, events.size)
+        values.putBoolean("saving", false); CardManagementSurface.render(root, values)
+        assertTrue(first.isClickable); assertTrue(first.isSelected)
+    }
+
     @Test @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun layoutFitsNarrowAndWideWindowsWithLargeTextInBothThemes() {
         for (night in listOf(Configuration.UI_MODE_NIGHT_NO, Configuration.UI_MODE_NIGHT_YES)) {

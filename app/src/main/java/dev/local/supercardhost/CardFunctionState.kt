@@ -60,6 +60,20 @@ internal object CardFunctionState {
         }
     }
 
+    fun background(snapshot: CardManagementState.Snapshot, cardType: String, name: String, strategy: Int): String {
+        require(cardType in listOf("pay", "camera") && name.isNotBlank() && strategy == 1)
+        val root = JSONObject(snapshot.raw)
+        val cards = root.getJSONArray("cards")
+        val value = (0 until cards.length()).map { cards.getJSONObject(it) }.single { it.getString("type") == cardType }
+        value.put("skinName", name).put("skinLoaderStrategy", strategy)
+        return root.toString()
+    }
+
+    fun background(snapshot: CardManagementState.Snapshot, cardType: String): Pair<String, Int> {
+        val value = card(snapshot.raw, cardType)
+        return value.optString("skinName") to value.optInt("skinLoaderStrategy", 1)
+    }
+
     private fun card(raw: String, type: String): JSONObject {
         val cards = JSONObject(raw).getJSONArray("cards")
         return (0 until cards.length()).map { cards.getJSONObject(it) }.singleOrNull { it.getString("type") == type }

@@ -35,6 +35,13 @@ class CardFunctionsSurfaceTest {
                 CardManagementSurface.render(root, Bundle().apply {
                     putBoolean("writable", true); putBoolean("authorized", true); putString("message", "更改会自动保存")
                     putInt("minimum", if (type == "pay") 1 else 4); putInt("maximum", 6)
+                    putString("backgroundName", "one"); putInt("backgroundStrategy", 1)
+                    putParcelableArrayList("backgrounds", ArrayList(listOf("one", "two", "three").mapIndexed { index, name -> Bundle().apply {
+                        putString("name", name); putInt("strategy", 1); putString("title", "背景 ${index + 1}")
+                        val preview = Bitmap.createBitmap(48, 72, Bitmap.Config.ARGB_8888)
+                        preview.eraseColor(listOf(0xff494c62.toInt(), 0xff485a64.toInt(), 0xff6b4d62.toInt())[index])
+                        putParcelable("preview", preview)
+                    } }))
                     putParcelableArrayList("cards", ArrayList(entries.mapIndexed { i, value -> Bundle().apply {
                         putString("type", value.first); putString("title", value.second); putBoolean("enabled", i < if (type == "pay") 4 else 6)
                     } }))
