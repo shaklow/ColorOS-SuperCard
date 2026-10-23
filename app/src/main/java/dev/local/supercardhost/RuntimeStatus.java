@@ -13,6 +13,7 @@ final class RuntimeStatus {
         result.putString("framework", framework);
         result.putString("frameworkVersion", version);
         result.putBoolean("systemUiHook", hooked);
+        result.putBundle("startup", RuntimeBootstrap.snapshot());
         result.putBoolean("rootDisplayReady", RootDisplayClient.isReady());
         result.putBundle("payTouchOverrides", PayTouchSettings.read(context));
         if (PayUserRouting.ready) result.putBundle("payUsers", PayUserSettings.read(context));

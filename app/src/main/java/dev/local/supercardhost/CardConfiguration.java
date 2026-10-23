@@ -26,7 +26,10 @@ public final class CardConfiguration {
     private static final FloatPreviewLease PREVIEWS = new FloatPreviewLease();
     public interface Callback { void complete(Bundle state, String error); }
 
-    public static void install(Application host) throws Exception {
+    private static boolean installed;
+
+    public static synchronized void install(Application host) throws Exception {
+        if (installed) return;
         AppPermissionGrants.fromFramework(host);
         int sidebarUid;
         try { sidebarUid = host.getPackageManager().getPackageUid("com.coloros.smartsidebar", 0); }
@@ -58,6 +61,7 @@ public final class CardConfiguration {
                 }
             }
         }, new IntentFilter(ACTION), Context.RECEIVER_EXPORTED);
+        installed = true;
     }
 
     public static void request(Context context, String operation, Bundle values, Callback callback) {

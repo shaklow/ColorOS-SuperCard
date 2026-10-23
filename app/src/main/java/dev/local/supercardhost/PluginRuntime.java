@@ -1,10 +1,7 @@
 package dev.local.supercardhost;
 
 import android.app.Application;
-import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -16,7 +13,8 @@ import java.lang.reflect.InvocationTargetException;
 public final class PluginRuntime {
     private static final String TAG = "SuperCardRuntime";
     private static Object plugin;
-    private static boolean attempted;
+    private static boolean attached;
+    private static RuntimeEventLoop events;
     public static boolean systemHost;
     private static Boolean lastLocked;
     private static Boolean lastShowing;
@@ -30,71 +28,74 @@ public final class PluginRuntime {
     private static boolean paySecureRequested, campusSecureRequested;
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
-    public static synchronized void start(Application host, Context module) {
-        if (attempted) return;
-        attempted = true;
-        systemHost = "com.android.systemui".equals(host.getPackageName());
-        try {
-            HostSettingsDefaults.ensure(host);
-            Log.i(TAG, "Starting original vivo plugin in " + host.getPackageName());
-            org.lsposed.hiddenapibypass.HiddenApiBypass.addHiddenApiExemptions(
-                "Landroid/content/Context;", "Landroid/view/", "Landroid/hardware/input/",
-                "Landroid/app/", "Landroid/os/", "Landroid/content/res/", "Landroid/graphics/",
-                "Landroid/window/", "Landroid/hardware/display/", "Landroid/content/pm/UserInfo;",
-                "Lcom/oplus/content/OplusIntent;", "Lcom/oplus/multiapp/");
-            if (systemHost) RootDisplayClient.install(host);
-            if (systemHost) MemoryTransferConnection.install(host);
-            Context resources = SuperCardArchiveResources.open(host, module);
-            File directory = new File(host.getCodeCacheDir(), "vivo_supercard");
-            if (!directory.isDirectory() && !directory.mkdirs()) throw new java.io.IOException("Cannot create code directory");
-            File code = new File(directory, "supercard-code.zip");
-            if (code.exists() && !code.delete()) throw new java.io.IOException("Cannot replace code");
-            try (var in = module.getAssets().open("supercard-code.zip"); var out = new java.io.FileOutputStream(code)) {
-                if (!code.setReadOnly()) throw new java.io.IOException("Cannot protect code");
-                in.transferTo(out);
+    public static void start(Application host, Context module) { RuntimeBootstrap.schedule(host); }
+
+    static Runnable prepare(Application host, Context module) throws Exception {
+        if (!"com.android.systemui".equals(host.getPackageName())) throw new IllegalArgumentException("Unexpected runtime host");
+        systemHost = true;
+
+        HostSettingsDefaults.ensure(host);
+        Log.i(TAG, "Starting original vivo plugin in " + host.getPackageName());
+        org.lsposed.hiddenapibypass.HiddenApiBypass.addHiddenApiExemptions(
+            "Landroid/content/Context;", "Landroid/view/", "Landroid/hardware/input/",
+            "Landroid/app/", "Landroid/os/", "Landroid/content/res/", "Landroid/graphics/",
+            "Landroid/window/", "Landroid/hardware/display/", "Landroid/content/pm/UserInfo;",
+            "Lcom/oplus/content/OplusIntent;", "Lcom/oplus/multiapp/");
+        CardConfiguration.install(host);
+        Context resources = SuperCardArchiveResources.open(host, module);
+        File directory = new File(host.getCodeCacheDir(), "vivo_supercard");
+        if (!directory.isDirectory() && !directory.mkdirs()) throw new java.io.IOException("Cannot create code directory");
+        File code = new File(directory, "supercard-code.zip");
+        if (code.exists() && !code.delete()) throw new java.io.IOException("Cannot replace code");
+        try (var in = module.getAssets().open("supercard-code.zip"); var out = new java.io.FileOutputStream(code)) {
+            if (!code.setReadOnly()) throw new java.io.IOException("Cannot protect code");
+            in.transferTo(out);
+        }
+        ClassLoader loader = new dalvik.system.PathClassLoader(code.getAbsolutePath(),
+            resources.getApplicationInfo().nativeLibraryDir, PluginRuntime.class.getClassLoader());
+        Context card = new PluginContext(resources, host, loader);
+        Class<?> service = loader.loadClass("com.vivo.card.service.CardService");
+        service.getConstructor(); service.getMethod("onCreate", Context.class, Context.class);
+        return () -> {
+            try { attach(host, card, loader); }
+            catch (Throwable error) { throw new IllegalStateException("Runtime attachment failed", error); }
+        };
+    }
+
+    private static synchronized void attach(Application host, Context card, ClassLoader loader) throws Exception {
+        if (attached) throw new IllegalStateException("Runtime attachment was already attempted");
+        attached = true;
+        RootDisplayClient.install(host);
+        MemoryTransferConnection.install(host);
+        HostSettingsDefaults.install(VectorEntry.current, loader);
+        MemoryPluginLoader.install(VectorEntry.current, host, loader, memoryLoader -> {
+            MemoryCommitLifecycle.install(VectorEntry.current, host, memoryLoader);
+            MemoryVoiceLimit.install(VectorEntry.current, memoryLoader);
+            if (!MemoryRuntimeBridge.install(VectorEntry.current, host, memoryLoader)) {
+                throw new IllegalStateException("Unable to attach original memory backend");
             }
-            ClassLoader loader = new dalvik.system.PathClassLoader(code.getAbsolutePath(),
-                resources.getApplicationInfo().nativeLibraryDir, PluginRuntime.class.getClassLoader());
-            Context card = new PluginContext(resources, host, loader);
-            HostSettingsDefaults.install(VectorEntry.current, loader);
-            MemoryPluginLoader.install(VectorEntry.current, host, loader, memoryLoader -> {
-                MemoryCommitLifecycle.install(VectorEntry.current, host, memoryLoader);
-                MemoryVoiceLimit.install(VectorEntry.current, memoryLoader);
-                if (!MemoryRuntimeBridge.install(VectorEntry.current, host, memoryLoader)) {
-                    throw new IllegalStateException("Unable to attach original memory backend");
-                }
-            });
-            LensRuntimeBridge.install(VectorEntry.current, loader);
-            try { PayChromeBridge.install(VectorEntry.current, host, loader); }
-            catch (Throwable error) { Log.w("SuperCardPayUi", "Original PAY appearance retained", error); }
-            try { DhuRuntimeBridge.install(VectorEntry.current, loader); }
-            catch (Throwable error) { Log.e("SuperCardDhu", "Campus card adapter unavailable", error); }
-            try { installCoupon(VectorEntry.current, host, loader); }
-            catch (Throwable error) { Log.e("SuperCardCoupon", "Coupon adapter unavailable", error); }
-            if (systemHost) LensRuntimeBridge.prepareConfiguration(host);
-            Class<?> type = loader.loadClass("com.vivo.card.service.CardService");
-            Object instance = type.getConstructor().newInstance();
-            plugin = instance;
-            PayRuntimeBridge.install(VectorEntry.current, host, loader, instance);
-            GestureConfigBridge.install(VectorEntry.current, host, loader, instance);
-            KeyguardBridge.install(VectorEntry.current, host, loader,
-                PluginRuntime::suspendOverlayForAuthentication,
-                () -> { updateState(host); restoreOverlayAfterAuthentication(); });
-            type.getMethod("onCreate", Context.class, Context.class).invoke(instance, host, card);
-            CardConfiguration.install(host);
-            GestureHandle.install(host, loader, instance);
-            updateState(host);
-            MAIN.postDelayed(new Runnable() {
-                @Override public void run() {
-                    updateState(host);
-                    MAIN.postDelayed(this, 750);
-                }
-            }, 750);
-            IntentFilter filter = new IntentFilter("dev.local.supercardhost.DEBUG");
-            // Shell diagnostics only; ordinary apps cannot send this receiver commands.
-            host.registerReceiver(new BroadcastReceiver() {
-                @Override public void onReceive(Context context, Intent intent) {
-                    String command = intent.getStringExtra("command");
+        });
+        LensRuntimeBridge.install(VectorEntry.current, loader);
+        try { PayChromeBridge.install(VectorEntry.current, host, loader); }
+        catch (Throwable error) { Log.w("SuperCardPayUi", "Original PAY appearance retained", error); }
+        try { DhuRuntimeBridge.install(VectorEntry.current, loader); }
+        catch (Throwable error) { Log.e("SuperCardDhu", "Campus card adapter unavailable", error); }
+        try { installCoupon(VectorEntry.current, host, loader); }
+        catch (Throwable error) { Log.e("SuperCardCoupon", "Coupon adapter unavailable", error); }
+        if (systemHost) LensRuntimeBridge.prepareConfiguration(host);
+        Class<?> type = loader.loadClass("com.vivo.card.service.CardService");
+        Object instance = type.getConstructor().newInstance();
+        plugin = instance;
+        PayRuntimeBridge.install(VectorEntry.current, host, loader, instance);
+        GestureConfigBridge.install(VectorEntry.current, host, loader, instance);
+        KeyguardBridge.install(VectorEntry.current, host, loader,
+            PluginRuntime::suspendOverlayForAuthentication,
+            () -> { updateState(host); restoreOverlayAfterAuthentication(); });
+        type.getMethod("onCreate", Context.class, Context.class).invoke(instance, host, card);
+        GestureHandle.install(host, loader, instance);
+        updateState(host);
+        events = new RuntimeEventLoop(host, () -> updateState(host), PluginRuntime::hide,
+                GestureHandle::reveal, command -> {
                     if ("show".equals(command)) show();
                     else if ("hide".equals(command)) hide();
                     else if ("memoryCheck".equals(command)) new Thread(() -> {
@@ -102,22 +103,14 @@ public final class PluginRuntime {
                         Log.i("SuperCardMemorySave", "Backend readiness=" + (result == null ? "ready" : result));
                     }, "SuperCardMemoryCheck").start();
                     else dumpState();
-                }
-            }, filter, "android.permission.DUMP", MAIN, Context.RECEIVER_EXPORTED);
-            IntentFilter state = new IntentFilter();
-            state.addAction(Intent.ACTION_SCREEN_OFF); state.addAction(Intent.ACTION_USER_PRESENT);
-            state.addAction(Intent.ACTION_SCREEN_ON);
-            host.registerReceiver(new BroadcastReceiver() {
-                @Override public void onReceive(Context context, Intent intent) {
-                    if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) hide();
-                    updateState(host);
-                    if (Intent.ACTION_SCREEN_ON.equals(intent.getAction())
-                            || Intent.ACTION_USER_PRESENT.equals(intent.getAction())) GestureHandle.reveal();
-                }
-            }, state, Context.RECEIVER_EXPORTED);
-            MAIN.postDelayed(PluginRuntime::dumpState, 2000);
-            Log.i(TAG, "Original CardService initialized; diagnostic receiver registered");
-        } catch (Throwable error) { failure("initialize", error); }
+                }, PluginRuntime::dumpState);
+        events.start();
+        Log.i(TAG, "Original CardService initialized; runtime event loop started");
+    }
+
+    static void abortStartup() {
+        if (events != null) { events.close(); events = null; }
+        hide();
     }
 
     static void installCoupon(io.github.libxposed.api.XposedModule module,
