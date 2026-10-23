@@ -11,9 +11,9 @@ import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.view.InputDevice;
+import android.view.DragEvent;
 import android.view.MotionEvent;
 import android.view.View;
-import android.view.accessibility.AccessibilityEvent;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import java.io.FileInputStream;
@@ -97,6 +97,7 @@ final class CardManagementCheck {
                 "Management window was not ready for physical input");
         int[] from = new int[2], to = new int[2];
         CountDownLatch laidOut = new CountDownLatch(1);
+        CountDownLatch touched = new CountDownLatch(1), dragging = new CountDownLatch(1);
         main(() -> {
             ScrollView scroll = (ScrollView) named(page, "scroll");
             int[] location = new int[2]; named(page, "card_" + source).getLocationOnScreen(location);
@@ -111,26 +112,34 @@ final class CardManagementCheck {
                 throw new AssertionError("Drag handle is not interactive");
             grip.setOnTouchListener((view, event) -> {
                 android.util.Log.i("CardManagementCheck", "handle input=" + event.getActionMasked() + " enabled=" + view.isEnabled());
+                if (event.getActionMasked() == MotionEvent.ACTION_DOWN) touched.countDown();
                 return false;
+            });
+            ((View) named(page, "scroll").getParent()).setOnDragListener((view, event) -> {
+                if (event.getAction() == DragEvent.ACTION_DRAG_STARTED) dragging.countDown();
+                return false; // Observe the system event; the existing child cards own acceptance and drop.
             });
             center(grip, from); center(named(page, "card_" + target), to);
             android.util.Log.i("CardManagementCheck", "drag " + from[0] + "," + from[1] + " to " + to[0] + "," + to[1]);
         });
         long down = SystemClock.uptimeMillis();
-        CountDownLatch held = new CountDownLatch(1);
-        test.getUiAutomation().setOnAccessibilityEventListener(event -> {
-            if (event.getEventType() == AccessibilityEvent.TYPE_VIEW_LONG_CLICKED) held.countDown();
-        });
         try {
             pointer(down, MotionEvent.ACTION_DOWN, from[0], from[1]);
-            if (!held.await(5, TimeUnit.SECONDS)) throw new AssertionError("Physical long press did not start dragging");
+            if (!touched.await(5, TimeUnit.SECONDS)) throw new AssertionError("Physical input did not reach the drag handle");
+            // A delayed notification for our already-confirmed write must not cancel the hold.
+            context.getContentResolver().notifyChange(Settings.Secure.getUriFor(KEY), null);
+            if (!dragging.await(5, TimeUnit.SECONDS)) throw new AssertionError("Physical long press did not start dragging");
+            test.waitForIdleSync();
             for (int i = 1; i <= 8; i++) {
                 pointer(down, MotionEvent.ACTION_MOVE, from[0] + (to[0] - from[0]) * i / 8f, from[1] + (to[1] - from[1]) * i / 8f);
                 SystemClock.sleep(35);
             }
         } finally {
             try { pointer(down, MotionEvent.ACTION_UP, to[0], to[1]); }
-            finally { test.getUiAutomation().setOnAccessibilityEventListener(null); }
+            finally { main(() -> {
+                named(page, "drag_" + source).setOnTouchListener(null);
+                ((View) named(page, "scroll").getParent()).setOnDragListener(null);
+            }); }
         }
     }
 
