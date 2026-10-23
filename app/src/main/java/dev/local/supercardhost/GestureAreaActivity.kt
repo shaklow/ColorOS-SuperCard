@@ -10,7 +10,6 @@ import java.util.function.Consumer
 
 /** One app-owned page; sidebar controls, resources and preference writes are no longer loaded. */
 class GestureAreaActivity : M3eSettingsActivity() {
-    private val main = Handler(Looper.getMainLooper())
     private var surface: View? = null
     private lateinit var session: FloatSettingsSession
     private var message = "正在连接卡包服务…"
@@ -21,13 +20,7 @@ class GestureAreaActivity : M3eSettingsActivity() {
         val requester = applicationContext
         session = FloatSettingsSession(
             { operation, values, result -> CardConfiguration.request(requester, operation, values, result::complete) },
-            object : FloatSettingsSession.Scheduler {
-                override fun now() = SystemClock.elapsedRealtime()
-                override fun epoch() = SystemClock.elapsedRealtimeNanos()
-                override fun execute(action: Runnable) { main.post(action) }
-                override fun after(action: Runnable, delay: Long) { main.postDelayed(action, delay) }
-                override fun cancel(action: Runnable) { main.removeCallbacks(action) }
-            }, object : FloatSettingsSession.Listener {
+            MainFloatSettingsScheduler(), object : FloatSettingsSession.Listener {
                 override fun changed() {
                     message = if (session.state().enabled) "调整后自动保存" else "超级卡包总开关已关闭"
                     render()
@@ -76,4 +69,14 @@ class GestureAreaActivity : M3eSettingsActivity() {
         val values = session.snapshot().apply { putString("message", message) }
         DhuMaterialUi.renderGestureSettings(root, values)
     }
+}
+
+/** A session can outlive its page while an accepted save finishes. Never capture the Activity. */
+private class MainFloatSettingsScheduler : FloatSettingsSession.Scheduler {
+    private val handler = Handler(Looper.getMainLooper())
+    override fun now() = SystemClock.elapsedRealtime()
+    override fun epoch() = SystemClock.elapsedRealtimeNanos()
+    override fun execute(action: Runnable) { handler.post(action) }
+    override fun after(action: Runnable, delay: Long) { handler.postDelayed(action, delay) }
+    override fun cancel(action: Runnable) { handler.removeCallbacks(action) }
 }
