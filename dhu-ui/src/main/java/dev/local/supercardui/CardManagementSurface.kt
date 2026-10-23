@@ -134,8 +134,7 @@ object CardManagementSurface {
                 "dhu" -> "授权设置"; "staging" -> "管理卡券"; else -> "功能设置"
             }, "settings_$type").apply {
                 setPadding(dp(8), paddingTop, dp(8), paddingBottom)
-                minWidth = 0; minimumWidth = 0; maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
+                minWidth = 0; minimumWidth = 0
             }
             val card: MaterialCardView
 

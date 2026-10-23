@@ -13,7 +13,7 @@ import android.provider.Settings;
 import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.View;
-import android.view.ViewConfiguration;
+import android.view.accessibility.AccessibilityEvent;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import java.io.FileInputStream;
@@ -117,13 +117,21 @@ final class CardManagementCheck {
             android.util.Log.i("CardManagementCheck", "drag " + from[0] + "," + from[1] + " to " + to[0] + "," + to[1]);
         });
         long down = SystemClock.uptimeMillis();
-        pointer(down, MotionEvent.ACTION_DOWN, from[0], from[1]);
-        SystemClock.sleep(ViewConfiguration.getLongPressTimeout() + 200L);
-        for (int i = 1; i <= 8; i++) {
-            pointer(down, MotionEvent.ACTION_MOVE, from[0] + (to[0] - from[0]) * i / 8f, from[1] + (to[1] - from[1]) * i / 8f);
-            SystemClock.sleep(35);
+        CountDownLatch held = new CountDownLatch(1);
+        test.getUiAutomation().setOnAccessibilityEventListener(event -> {
+            if (event.getEventType() == AccessibilityEvent.TYPE_VIEW_LONG_CLICKED) held.countDown();
+        });
+        try {
+            pointer(down, MotionEvent.ACTION_DOWN, from[0], from[1]);
+            if (!held.await(5, TimeUnit.SECONDS)) throw new AssertionError("Physical long press did not start dragging");
+            for (int i = 1; i <= 8; i++) {
+                pointer(down, MotionEvent.ACTION_MOVE, from[0] + (to[0] - from[0]) * i / 8f, from[1] + (to[1] - from[1]) * i / 8f);
+                SystemClock.sleep(35);
+            }
+        } finally {
+            try { pointer(down, MotionEvent.ACTION_UP, to[0], to[1]); }
+            finally { test.getUiAutomation().setOnAccessibilityEventListener(null); }
         }
-        pointer(down, MotionEvent.ACTION_UP, to[0], to[1]);
     }
 
     private void pointer(long down, int action, float x, float y) {
