@@ -5,6 +5,16 @@ import org.junit.Test
 
 class NativeCardDeckTest {
     private class Card(val type: String) : AutoCloseable { var closes = 0; override fun close() { closes++ } }
+    @Test fun outgoingContentLivesUntilTheAnimationCompletesAndHideCleansInterruptedTransitions() {
+        val cards = mutableListOf<Card>()
+        val deck = NativeCardDeck({ type -> Card(type).also(cards::add) }, { _, _, _, _ -> }, {}, { throw it })
+        deck.show(listOf("dhu", "camera")); assertNull(deck.target(-1)); assertEquals("camera", deck.target(1))
+        deck.move(1, true); assertEquals("camera", deck.selected)
+        assertEquals(listOf(0, 0), cards.map { it.closes })
+        deck.releaseRetired(); deck.releaseRetired(); assertEquals(listOf(1, 0), cards.map { it.closes })
+        deck.move(-1, true); deck.hide(); deck.close()
+        assertEquals(listOf(1, 1, 1), cards.map { it.closes })
+    }
     @Test fun switchAndHideOwnExactlyOneContentAndInvalidateOldWork() {
         val cards = mutableListOf<Card>(); var visible: Card? = null
         val deck = NativeCardDeck({ type -> Card(type).also(cards::add) }, { value, _, _, _ -> visible = value }, { visible = null }, { throw it })

@@ -65,6 +65,7 @@ public final class PluginRuntime {
     private static synchronized void attach(Application host, Context card, ClassLoader loader) throws Exception {
         if (attached) throw new IllegalStateException("Runtime attachment was already attempted");
         attached = true;
+        NativeGestureCompatibility.install(VectorEntry.current, loader);
         RootDisplayClient.install(host);
         MemoryTransferConnection.install(host);
         HostSettingsDefaults.install(VectorEntry.current, loader);
@@ -162,6 +163,7 @@ public final class PluginRuntime {
 
     static void showLegacy() {
         if (plugin == null) throw new IllegalStateException("卡包服务尚未连接");
+        NativeCardRuntime.useLegacy();
         try { requestOriginalShow(); }
         catch (Exception error) { throw new IllegalStateException("卡片唤出失败，请重试", error); }
     }

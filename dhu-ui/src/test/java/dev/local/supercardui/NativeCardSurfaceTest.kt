@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Bundle
 import android.view.View
+import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.FrameLayout
 import android.widget.TextView
 import org.junit.Assert.*
@@ -30,23 +31,24 @@ class NativeCardSurfaceTest {
             val root = NativeCardSurface.create(context); val events = mutableListOf<String>()
             NativeCardSurface.bind(root, Consumer { events.add(it.getString("action")!!) })
             val content = root.findViewWithTag<FrameLayout>("native_content")
-            content.addView(TextView(context).apply { text = "卡片内容" }, FrameLayout.LayoutParams(-1, -1))
+            content.addView(TextView(context).apply { text = "卡片内容"; setPadding(24, 24, 24, 24) }, FrameLayout.LayoutParams(-1, -1))
             val state = Bundle().apply { putInt("index", 0); putInt("count", 2); putString("title", "LENS") }
             NativeCardSurface.render(root, state); assertTrue(events.isEmpty())
-            val previous = root.findViewWithTag<View>("native_previous"); val next = root.findViewWithTag<View>("native_next")
-            assertFalse(previous.isEnabled); assertTrue(next.isEnabled)
-            next.performClick(); assertEquals(listOf("next"), events)
+            assertNull(root.findViewWithTag<View>("native_previous")); assertNull(root.findViewWithTag<View>("native_next"))
+            assertFalse(root.performAccessibilityAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD, null))
+            assertTrue(root.performAccessibilityAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD, null))
+            assertEquals(listOf("next"), events)
             state.putInt("index", 1); NativeCardSurface.render(root, state)
-            assertSame(content, root.findViewWithTag("native_content")); assertTrue(previous.isEnabled); assertFalse(next.isEnabled)
+            assertSame(content, root.findViewWithTag("native_content"))
+            assertTrue(root.performAccessibilityAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD, null))
+            assertFalse(root.performAccessibilityAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD, null))
+            assertTrue(root.performAccessibilityAction(AccessibilityNodeInfo.ACTION_DISMISS, null))
+            assertEquals(listOf("next", "previous", "close"), events)
             val density = context.resources.displayMetrics.density
-            val w = (width * density).toInt(); val h = (506 * density).toInt()
+            val w = (width * density).toInt(); val h = (450 * density).toInt()
             root.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY))
             root.layout(0, 0, w, h)
-            for (name in listOf("previous", "next", "close")) {
-                val button = root.findViewWithTag<View>("native_$name")
-                assertTrue(button.width >= 48 * density && button.height >= 48 * density)
-            }
-            assertTrue(content.height >= 400 * density)
+            assertEquals(h, content.height)
             System.getenv("SUPERCARD_PREVIEW_DIR")?.let { directory ->
                 val image = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888); root.draw(Canvas(image))
                 val file = File(directory, "native-host-$width-${if (night == Configuration.UI_MODE_NIGHT_YES) "dark" else "light"}-${android.os.Build.VERSION.SDK_INT}.png")

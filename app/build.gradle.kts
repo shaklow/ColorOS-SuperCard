@@ -32,6 +32,7 @@ android {
     // is tested against the installed unified APK by SettingsStartupTest.
 }
 dependencies {
+    compileOnly(project(":framework-stubs"))
     implementation("com.google.zxing:core:3.5.3")
     implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
     implementation("org.luckypray:dexkit:2.0.7")

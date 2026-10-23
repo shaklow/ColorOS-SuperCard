@@ -10,6 +10,10 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.app.KeyguardManager
+import android.os.PowerManager
+import android.hardware.display.DisplayManager
+import android.util.DisplayMetrics
 
 /** Native core entry point; ColorOS authentication and display backends stay behind adapters. */
 internal object NativeCardRuntime {
@@ -20,6 +24,34 @@ internal object NativeCardRuntime {
     private var registered = false
     private var access: ColorOsCardAccess? = null
     private var authentication: AutoCloseable? = null
+    private var input: SystemGestureInput? = null
+    private var edgeActive = false
+    private enum class Mode { AUTO, NATIVE, LEGACY }
+    private var mode = Mode.AUTO
+    @Volatile private var inputEnabled = false
+    @JvmStatic fun ownsGesture() = inputEnabled
+    private fun policy(): GesturePolicy.Decision {
+        val host = checkNotNull(application)
+        val metrics = DisplayMetrics()
+        checkNotNull(host.getSystemService(DisplayManager::class.java)?.getDisplay(0)).getRealMetrics(metrics)
+        return GesturePolicyAdapter.read(host, metrics,
+            host.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked != false,
+            host.getSystemService(PowerManager::class.java)?.isInteractive == true)
+    }
+    private fun syncRouting() {
+        val host = application ?: return
+        val raw = Settings.Secure.getString(host.contentResolver, "card_setting_data")
+        val enabled = if (raw.isNullOrBlank()) emptyList() else CardManagementState.parse(raw).cards.filter { it.enabled }
+        val allMigrated = enabled.isNotEmpty() && enabled.all { it.type == "dhu" || it.type == "camera" }
+        val next = input != null && cards().isNotEmpty() && mode != Mode.LEGACY && (mode == Mode.NATIVE || allMigrated) &&
+            Settings.Secure.getInt(host.contentResolver, "card_service_total_switch", 1) == 1 &&
+            host.getSystemService(PowerManager::class.java)?.isInteractive == true
+        val previous = inputEnabled
+        inputEnabled = next
+        if (next && !previous) PluginRuntime.hide()
+        if (!next && previous) hide()
+    }
+    @JvmStatic fun useLegacy() { mode = Mode.LEGACY; inputEnabled = false; hide() }
     private fun unlocked() = access?.unlocked() == true
     private fun available() = unlocked() && application?.let {
         Settings.Secure.getInt(it.contentResolver, "card_service_total_switch", 1) == 1
@@ -30,6 +62,7 @@ internal object NativeCardRuntime {
         require(host.packageName == "com.android.systemui")
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
+                syncRouting()
                 if (!unlocked() || intent.action == Intent.ACTION_CONFIGURATION_CHANGED) hide()
             }
         }
@@ -37,6 +70,7 @@ internal object NativeCardRuntime {
             override fun onChange(selfChange: Boolean, uri: Uri?) {
                 unlockGeneration++; authentication?.close(); authentication = null
                 try {
+                    input?.cancel(); syncRouting()
                     if (Settings.Secure.getInt(host.contentResolver, "card_service_total_switch", 1) != 1 || !unlocked()) hide()
                     else if (window?.showing == true) {
                         val cards = cards()
@@ -56,7 +90,33 @@ internal object NativeCardRuntime {
                 host.contentResolver.registerContentObserver(Settings.Secure.getUriFor(key), false, observer)
             RootDisplayClient.install(host)
             application = host; access = ColorOsCardAccess(host); registered = true
+            try {
+                input = SystemGestureInput(host, object : SystemGestureInput.Events {
+                    override fun enabled() = inputEnabled
+                    override fun visible() = isShowing()
+                    override fun policy() = NativeCardRuntime.policy()
+                    override fun begin() {
+                        unlockGeneration++; authentication?.close(); authentication = null
+                        edgeActive = true
+                        if (unlocked()) {
+                            PluginRuntime.hide()
+                            val current = window ?: NativeCardHost(host, allowed = ::available).also { window = it }
+                            current.beginEdge(cards())
+                        }
+                    }
+                    override fun drag(distance: Float) { if (edgeActive) window?.followEdge(distance) }
+                    override fun end(commit: Boolean, velocityX: Float) {
+                        if (!edgeActive) return
+                        edgeActive = false
+                        if (commit && !unlocked()) show() else window?.endEdge(commit, velocityX)
+                    }
+                })
+            } catch (error: Throwable) { android.util.Log.e("SuperCardNativeInput", "Native gesture monitor unavailable", error) }
+            syncRouting()
         } catch (error: Throwable) {
+            inputEnabled = false
+            try { input?.close() } catch (cleanup: Throwable) { android.util.Log.w("SuperCardNativeInput", "Cannot roll back monitor", cleanup) }
+            input = null; application = null; access = null; registered = false
             host.contentResolver.unregisterContentObserver(observer)
             if (receiverRegistered) host.unregisterReceiver(receiver)
             throw error
@@ -73,12 +133,13 @@ internal object NativeCardRuntime {
         val host = checkNotNull(application) { "新卡包服务尚未连接" }
         check(Settings.Secure.getInt(host.contentResolver, "card_service_total_switch", 1) == 1) { "请先开启超级卡包" }
         check(cards().isNotEmpty()) { "请在卡片管理启用 LENS 或校园卡" }
+        check(input != null) { "系统滑动手势暂不可用，请重新载入卡包" }
+        mode = Mode.NATIVE; syncRouting()
         PluginRuntime.hide()
         val ticket = ++unlockGeneration
         authentication?.close(); authentication = null
         if (unlocked()) { open(); return }
         window?.hide()
-        authentication?.close()
         authentication = checkNotNull(access).requestUnlock(Runnable {
             if (ticket == unlockGeneration) {
                 authentication = null
@@ -92,6 +153,9 @@ internal object NativeCardRuntime {
         val current = window ?: NativeCardHost(host, allowed = ::available).also { window = it }
         current.show(cards())
     }
-    @JvmStatic fun hide() { unlockGeneration++; authentication?.close(); authentication = null; window?.hide() }
+    @JvmStatic fun hide() {
+        edgeActive = false; input?.cancel()
+        unlockGeneration++; authentication?.close(); authentication = null; window?.hide()
+    }
     @JvmStatic fun isShowing() = window?.showing == true
 }
