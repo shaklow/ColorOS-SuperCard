@@ -4,7 +4,7 @@ import android.os.Bundle;
 
 /** Immutable values shown by the gesture controls. Read tolerance preserves pixel rounding. */
 final class FloatSettingsState {
-    static final float MIN_LENGTH = .0401f;
+    static final float MIN_LENGTH = GestureSettingsRules.EDIT_MIN_LENGTH;
     final float top, bottom, opacity;
     final boolean visible, autoHide, enabled, unlocked;
     final int lockStyle;
@@ -20,13 +20,13 @@ final class FloatSettingsState {
         unlocked = source.getBoolean("unlocked", true); lockStyle = Math.max(0, Math.min(3, source.getInt("lockStyle")));
     }
 
-    static FloatSettingsState defaults() { return new FloatSettingsState(.76f, .98f, .4f, true, true); }
+    static FloatSettingsState defaults() { return new FloatSettingsState(GestureSettingsRules.DEFAULT_TOP, GestureSettingsRules.DEFAULT_BOTTOM, GestureSettingsRules.DEFAULT_OPACITY, true, true); }
 
     static FloatSettingsState read(Bundle value) {
         if (value == null || !value.containsKey("top") || !value.containsKey("bottom")) return null;
         float top = value.getFloat("top"), bottom = value.getFloat("bottom");
-        if (!Float.isFinite(top) || !Float.isFinite(bottom) || top < 0 || bottom > 1 || bottom - top < .039f) return null;
-        return new FloatSettingsState(top, bottom, clamp(value.getFloat("handleOpacity", .4f), 0, 1),
+        if (!GestureSettingsRules.validFractionRange(top, bottom)) return null;
+        return new FloatSettingsState(top, bottom, GestureSettingsRules.opacity(value.getFloat("handleOpacity", GestureSettingsRules.DEFAULT_OPACITY)),
                 value.getBoolean("handleVisible", true), value.getBoolean("handleAutoHide", true), value);
     }
 
@@ -52,10 +52,10 @@ final class FloatSettingsState {
         return copy(start, end, opacity, visible, autoHide);
     }
 
-    FloatSettingsState opacity(float value) { return copy(top, bottom, clamp(value, 0, 1), visible, autoHide); }
+    FloatSettingsState opacity(float value) { return copy(top, bottom, GestureSettingsRules.opacity(value), visible, autoHide); }
     FloatSettingsState visible(boolean value) { return copy(top, bottom, opacity, value, autoHide); }
     FloatSettingsState autoHide(boolean value) { return copy(top, bottom, opacity, visible, value); }
-    FloatSettingsState reset() { return copy(.76f, .98f, .4f, visible, autoHide); }
+    FloatSettingsState reset() { return copy(GestureSettingsRules.DEFAULT_TOP, GestureSettingsRules.DEFAULT_BOTTOM, GestureSettingsRules.DEFAULT_OPACITY, visible, autoHide); }
     FloatSettingsState unlocked(boolean value) {
         Bundle next = snapshot(); next.putBoolean("unlocked", value); return read(next);
     }
@@ -71,6 +71,7 @@ final class FloatSettingsState {
     Bundle snapshot() {
         Bundle result = new Bundle(source); result.putAll(range()); result.putFloat("handleOpacity", opacity);
         result.putBoolean("handleVisible", visible); result.putBoolean("handleAutoHide", autoHide);
+        result.putFloat("minimumLength", MIN_LENGTH);
         result.putBoolean("enabled", enabled); result.putBoolean("unlocked", unlocked); result.putInt("lockStyle", lockStyle);
         return result;
     }

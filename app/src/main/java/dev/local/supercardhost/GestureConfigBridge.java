@@ -31,7 +31,7 @@ public final class GestureConfigBridge {
     private static final String TAG = "SuperCardGestureConfig";
     private static final String TOTAL = "card_service_total_switch";
     private static final String SIDE = "navigation_gesture_right_side";
-    private static final String RANGE = "navigation_slide_card_range";
+    private static final String RANGE = GestureSettingsRules.RANGE_KEY;
     private static final String LOCK = "bbk_lock_disable_card_slide_setting";
     private static final String LOCK_STYLE = "bbk_lock_disable_card_slide_open_style";
     private static final String REST = "bbk_screen_disable_card_slide_setting";
@@ -110,7 +110,7 @@ public final class GestureConfigBridge {
             changedRange.setAccessible(true);
             module.hook(changedRange).intercept(chain -> {
                 String range = Settings.Secure.getString(host.getContentResolver(), RANGE);
-                if (Policy.parseRange(range) == null) {
+                if (GestureSettingsRules.parseRange(range) == null) {
                     refresh();
                     return null;
                 }
@@ -289,7 +289,7 @@ public final class GestureConfigBridge {
         Policy(boolean total, String side, String range, boolean lockSwitch, int lockStyle,
                boolean restSwitch, int restStyle, boolean locked, boolean interactive, DisplayMetrics metrics) {
             this.total = total;
-            this.side = side == null || side.isEmpty() ? "side_back;side_card" : side;
+            this.side = side == null || side.isEmpty() ? GestureSettingsRules.DEFAULT_SIDE : side;
             this.range = range;
             this.lockSwitch = lockSwitch;
             this.lockStyle = lockStyle;
@@ -301,23 +301,11 @@ public final class GestureConfigBridge {
             height = metrics.heightPixels;
             if (width <= 0 || height <= 0 || !Float.isFinite(metrics.density) || metrics.density <= 0)
                 throw new IllegalArgumentException("Invalid physical display metrics");
-            edge = Math.min(width, Math.max(1, Math.round(24f * metrics.density)));
-            rangeValues = parseRange(range);
-            if (rangeValues != null) {
-                double scale = (double) width / rangeValues[2];
-                double top = rangeValues[1] * scale;
-                double bottom = rangeValues[3] * scale;
-                if (Double.isFinite(top) && Double.isFinite(bottom) && top >= 0 && bottom <= height
-                        && top < bottom) {
-                    int start = (int) Math.round(top);
-                    int end = (int) Math.round(bottom);
-                    if (start < end) navigationRegion.set(width - edge, start, width, end);
-                }
-            }
-            boolean tokenEnabled = false;
-            for (String token : this.side.split(";")) {
-                if ("side_card".equals(token.trim())) tokenEnabled = true;
-            }
+            edge = GestureSettingsRules.edge(width, metrics.density);
+            rangeValues = GestureSettingsRules.parseRange(range);
+            GestureSettingsRules.Pixels pixels = GestureSettingsRules.project(rangeValues, width, height);
+            if (pixels != null) navigationRegion.set(width - edge, pixels.top, width, pixels.bottom);
+            boolean tokenEnabled = GestureSettingsRules.sideEnabled(this.side);
             navigationEnabled = tokenEnabled && !navigationRegion.isEmpty();
             branch = !interactive ? 2 : locked ? 1 : 0;
             lockEnabled = total && branch == 1 && lockSwitch && styleEnabled(lockStyle);
@@ -348,23 +336,6 @@ public final class GestureConfigBridge {
                     && restStyle == other.restStyle && locked == other.locked && interactive == other.interactive
                     && width == other.width && height == other.height && edge == other.edge
                     && side.equals(other.side) && Objects.equals(range, other.range);
-        }
-
-        private static Float[] parseRange(String raw) {
-            if (raw == null) return null;
-            String[] pieces = raw.split(";", -1);
-            if (pieces.length != 4) return null;
-            Float[] result = new Float[4];
-            try {
-                for (int i = 0; i < 4; i++) {
-                    result[i] = Float.parseFloat(pieces[i].trim());
-                    if (!Float.isFinite(result[i])) return null;
-                }
-                if (result[2] <= 0 || result[1] < 0 || result[3] <= result[1]) return null;
-                return result;
-            } catch (NumberFormatException ignored) {
-                return null;
-            }
         }
     }
 }

@@ -50,7 +50,7 @@ public final class GestureHandle {
     private static final String OPACITY = "supercard_handle_opacity";
     private static final String TOTAL = "card_service_total_switch";
     private static final String SIDE = "navigation_gesture_right_side";
-    private static final String RANGE = "navigation_slide_card_range";
+    private static final String RANGE = GestureSettingsRules.RANGE_KEY;
     private static final String LOCK = "bbk_lock_disable_card_slide_setting";
     private static final String LOCK_STYLE = "bbk_lock_disable_card_slide_open_style";
     private static final long HIDE_DELAY_MS = 3000;
@@ -195,11 +195,10 @@ public final class GestureHandle {
      * call renews the lease without restarting the appearance animation.
      */
     public static void setPreview(float top, float bottom, float opacity, boolean visible) {
-        if (!Float.isFinite(top) || !Float.isFinite(bottom) || top < 0 || bottom > 1
-                || top >= bottom || bottom - top + .000001f < .04f) {
+        if (!GestureSettingsRules.validEditRange(top, bottom)) {
             throw new IllegalArgumentException("Invalid gesture preview range");
         }
-        if (!Float.isFinite(opacity) || opacity < 0 || opacity > 1) {
+        if (!GestureSettingsRules.validOpacity(opacity)) {
             throw new IllegalArgumentException("Invalid gesture preview opacity");
         }
         if (Looper.myLooper() != Looper.getMainLooper()) {
@@ -268,14 +267,10 @@ public final class GestureHandle {
         boolean total = Settings.Secure.getInt(resolver, TOTAL, 1) == 1;
         boolean visible = Settings.Secure.getInt(resolver, VISIBLE, 1) == 1;
         boolean autoHide = Settings.Secure.getInt(resolver, AUTO_HIDE, 1) == 1;
-        float opacity = Math.max(0, Math.min(100, Settings.Secure.getInt(resolver, OPACITY, 40))) / 100f;
+        float opacity = GestureSettingsRules.opacity(Settings.Secure.getInt(resolver, OPACITY, GestureSettingsRules.DEFAULT_OPACITY_PERCENT));
         Rect navigation = navigationRegion(Settings.Secure.getString(resolver, RANGE), metrics);
         String side = Settings.Secure.getString(resolver, SIDE);
-        if (side == null || side.isEmpty()) side = "side_back;side_card";
-        boolean sideEnabled = false;
-        for (String token : side.split(";")) {
-            if ("side_card".equals(token.trim())) sideEnabled = true;
-        }
+        boolean sideEnabled = GestureSettingsRules.sideEnabled(side);
         boolean navigationEnabled = sideEnabled && !navigation.isEmpty();
         Rect selected = new Rect();
         if (total && visible && power.isInteractive()) {
@@ -285,7 +280,7 @@ public final class GestureHandle {
                 // Match GestureConfigBridge: style 1/3 are independent of the
                 // unlocked switch; style 2 follows the unlocked active region.
                 int style = Settings.Secure.getInt(resolver, LOCK_STYLE, 0);
-                int edge = Math.min(metrics.widthPixels, Math.max(1, Math.round(24 * metrics.density)));
+                int edge = GestureSettingsRules.edge(metrics.widthPixels, metrics.density);
                 if (style == 1) selected.set(metrics.widthPixels - edge, 0,
                         metrics.widthPixels, metrics.heightPixels);
                 else if (style == 2 && navigationEnabled) selected.set(navigation);
@@ -303,30 +298,9 @@ public final class GestureHandle {
     /** Same source-width scaling and rejection rules as GestureConfigBridge.Policy. */
     private static Rect navigationRegion(String raw, DisplayMetrics metrics) {
         Rect result = new Rect();
-        if (raw == null) return result;
-        String[] pieces = raw.split(";", -1);
-        if (pieces.length != 4) return result;
-        try {
-            float[] values = new float[4];
-            for (int i = 0; i < 4; i++) {
-                values[i] = Float.parseFloat(pieces[i].trim());
-                if (!Float.isFinite(values[i])) return result;
-            }
-            if (values[2] <= 0 || values[1] < 0 || values[3] <= values[1]) return result;
-            double scale = (double) metrics.widthPixels / values[2];
-            double top = values[1] * scale;
-            double bottom = values[3] * scale;
-            if (!Double.isFinite(top) || !Double.isFinite(bottom) || top < 0
-                    || bottom > metrics.heightPixels || top >= bottom) return result;
-            int start = (int) Math.round(top);
-            int end = (int) Math.round(bottom);
-            if (start < end) {
-                int edge = Math.min(metrics.widthPixels, Math.max(1, Math.round(24 * metrics.density)));
-                result.set(metrics.widthPixels - edge, start, metrics.widthPixels, end);
-            }
-        } catch (NumberFormatException ignored) {
-            // Malformed or empty ranges do not display a misleading gesture hint.
-        }
+        GestureSettingsRules.Pixels range = GestureSettingsRules.project(raw, metrics.widthPixels, metrics.heightPixels);
+        if (range != null) result.set(metrics.widthPixels - GestureSettingsRules.edge(metrics.widthPixels, metrics.density),
+                range.top, metrics.widthPixels, range.bottom);
         return result;
     }
 

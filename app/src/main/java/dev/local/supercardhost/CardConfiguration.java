@@ -158,8 +158,7 @@ public final class CardConfiguration {
             }
             float top = intent.getFloatExtra("top", Float.NaN), bottom = intent.getFloatExtra("bottom", Float.NaN);
             float opacity = intent.getFloatExtra("handleOpacity", Float.NaN);
-            if (!Float.isFinite(top) || !Float.isFinite(bottom) || top < 0 || bottom > 1
-                    || bottom - top + .000001f < .04f || !Float.isFinite(opacity) || opacity < 0 || opacity > 1)
+            if (!GestureSettingsRules.validEditRange(top, bottom) || !GestureSettingsRules.validOpacity(opacity))
                 throw new IllegalArgumentException("Invalid gesture preview");
             if (PREVIEWS.preview(intent.getStringExtra("previewOwner"), intent.getLongExtra("previewEpoch", 0), senderUid,
                     SystemClock.elapsedRealtimeNanos(), SystemClock.elapsedRealtime(), intent.getLongExtra("previewDeadline", 0)))
@@ -175,8 +174,7 @@ public final class CardConfiguration {
             put(context, "card_service_total_switch", intent.getBooleanExtra("value", false) ? 1 : 0);
         } else if ("unlocked".equals(operation)) {
             String old = Settings.Secure.getString(context.getContentResolver(), "navigation_gesture_right_side");
-            String first = old == null || old.isEmpty() ? "side_back" : old.split(";", -1)[0];
-            String side = first + ";" + (intent.getBooleanExtra("value", false) ? "side_card" : "side_back");
+            String side = GestureSettingsRules.unlocked(old, intent.getBooleanExtra("value", false));
             if (!Settings.Secure.putString(context.getContentResolver(), "navigation_gesture_right_side", side)) {
                 throw new IllegalStateException("Cannot save unlocked gesture");
             }
@@ -191,19 +189,16 @@ public final class CardConfiguration {
             put(context, "supercard_handle_auto_hide", intent.getBooleanExtra("value", true) ? 1 : 0);
         } else if ("handleOpacity".equals(operation)) {
             float value = intent.getFloatExtra("value", Float.NaN);
-            if (!Float.isFinite(value) || value < 0 || value > 1) throw new IllegalArgumentException("Invalid handle opacity");
+            if (!GestureSettingsRules.validOpacity(value)) throw new IllegalArgumentException("Invalid handle opacity");
             put(context, "supercard_handle_opacity", Math.round(value * 100));
         } else if ("range".equals(operation)) {
             float top = intent.getFloatExtra("top", Float.NaN), bottom = intent.getFloatExtra("bottom", Float.NaN);
-            if (!Float.isFinite(top) || !Float.isFinite(bottom) || top < 0 || bottom > 1
-                    || top >= bottom || bottom - top + .000001f < .04f) {
+            if (!GestureSettingsRules.validEditRange(top, bottom)) {
                 throw new IllegalArgumentException("Invalid gesture range");
             }
             DisplayMetrics metrics = metrics(context);
-            String range = (metrics.widthPixels - Math.round(24 * metrics.density)) + ";"
-                    + Math.round(top * metrics.heightPixels) + ";" + metrics.widthPixels + ";"
-                    + Math.round(bottom * metrics.heightPixels);
-            if (!Settings.Secure.putString(context.getContentResolver(), "navigation_slide_card_range", range)) {
+            String range = GestureSettingsRules.encode(top, bottom, metrics.widthPixels, metrics.heightPixels, metrics.density);
+            if (!Settings.Secure.putString(context.getContentResolver(), GestureSettingsRules.RANGE_KEY, range)) {
                 throw new IllegalStateException("Cannot save gesture range");
             }
         } else throw new IllegalArgumentException("Unknown configuration operation");
@@ -223,26 +218,19 @@ public final class CardConfiguration {
         state.putBoolean("nativeCards", false);
         state.putBoolean("enabled", Settings.Secure.getInt(context.getContentResolver(), "card_service_total_switch", 1) == 1);
         String side = Settings.Secure.getString(context.getContentResolver(), "navigation_gesture_right_side");
-        state.putBoolean("unlocked", side == null || side.contains("side_card"));
+        state.putBoolean("unlocked", GestureSettingsRules.sideEnabled(side));
         state.putBoolean("handleVisible", Settings.Secure.getInt(context.getContentResolver(), "supercard_handle_visible", 1) == 1);
         state.putBoolean("handleAutoHide", Settings.Secure.getInt(context.getContentResolver(), "supercard_handle_auto_hide", 1) == 1);
-        state.putFloat("handleOpacity", Math.max(0, Math.min(100,
-                Settings.Secure.getInt(context.getContentResolver(), "supercard_handle_opacity", 40))) / 100f);
+        state.putFloat("handleOpacity", GestureSettingsRules.opacity(Settings.Secure.getInt(context.getContentResolver(),
+                "supercard_handle_opacity", GestureSettingsRules.DEFAULT_OPACITY_PERCENT)));
         int style = Settings.Secure.getInt(context.getContentResolver(), "bbk_lock_disable_card_slide_open_style", 0);
         state.putInt("lockStyle", Settings.Secure.getInt(context.getContentResolver(), "bbk_lock_disable_card_slide_setting", 0) == 1 ? style : 0);
         DisplayMetrics metrics = metrics(context);
         state.putInt("screenWidth", metrics.widthPixels); state.putInt("screenHeight", metrics.heightPixels);
-        float top = .76f, bottom = .98f;
-        String range = Settings.Secure.getString(context.getContentResolver(), "navigation_slide_card_range");
-        if (range != null) try {
-            String[] pieces = range.split(";");
-            float source = Float.parseFloat(pieces[2]);
-            float scale = metrics.widthPixels / source / metrics.heightPixels;
-            float parsedTop = Float.parseFloat(pieces[1]) * scale;
-            float parsedBottom = Float.parseFloat(pieces[3]) * scale;
-            if (Float.isFinite(parsedTop) && Float.isFinite(parsedBottom) && parsedTop >= 0
-                    && parsedBottom <= 1 && parsedBottom > parsedTop) { top = parsedTop; bottom = parsedBottom; }
-        } catch (RuntimeException ignored) { }
+        float top = GestureSettingsRules.DEFAULT_TOP, bottom = GestureSettingsRules.DEFAULT_BOTTOM;
+        GestureSettingsRules.Pixels range = GestureSettingsRules.project(Settings.Secure.getString(context.getContentResolver(),
+                GestureSettingsRules.RANGE_KEY), metrics.widthPixels, metrics.heightPixels);
+        if (range != null) { top = range.top / (float) metrics.heightPixels; bottom = range.bottom / (float) metrics.heightPixels; }
         state.putFloat("top", top); state.putFloat("bottom", bottom);
         return state;
     }

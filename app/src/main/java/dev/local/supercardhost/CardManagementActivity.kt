@@ -22,7 +22,6 @@ open class CardManagementActivity : M3eSettingsActivity() {
     private var root: View? = null
     private var confirmed: CardManagementState.Snapshot? = null
     private var projected: CardManagementState.Snapshot? = null
-    private var backgrounds: List<Bundle>? = null
     private var busy = false
     private var refreshPending = false
     private var observing = false
@@ -115,15 +114,11 @@ open class CardManagementActivity : M3eSettingsActivity() {
                 // A failed/stale write displays the actual provider value, never an optimistic switch state.
                 if (edit != null) try { result = validate(repository.load()) } catch (_: Exception) {}
             }
-            val catalog = if (backgrounds == null && cardType != null) try { CardBackgrounds.load(this, cardType!!) }
-                catch (error: Exception) { android.util.Log.w("CardBackgrounds", "Cannot read background assets", error); emptyList() }
-                catch (error: LinkageError) { android.util.Log.w("CardBackgrounds", "Cannot read background assets", error); emptyList() } else backgrounds
             val snapshot = result
             val failure = message
             main.post {
                 if (closed || !alive()) return@post
                 busy = false; confirmed = snapshot; projected = null
-                backgrounds = catalog
                 if (edit != null && failure != null) Toast.makeText(this, failure, Toast.LENGTH_LONG).show()
                 render(failure ?: "更改会自动保存")
                 if (refreshPending) { refreshPending = false; refresh() }
@@ -138,12 +133,6 @@ open class CardManagementActivity : M3eSettingsActivity() {
             "runtime" -> open(Intent(this, HostToolsActivity::class.java))
             "gestures" -> open(Intent(this, GestureAreaActivity::class.java))
             "management" -> open(Intent(this, CardManagementActivity::class.java))
-            "background" -> if (!busy && cardType != null) {
-                val name = event.getString("name") ?: return
-                val strategy = event.getInt("strategy")
-                if (backgrounds.orEmpty().none { it.getString("name") == name && it.getInt("strategy") == strategy }) return
-                submit { snapshot -> CardFunctionState.background(snapshot, cardType!!, name, strategy) }
-            }
             "toggle" -> if (!busy) {
                 val type = event.getString("type") ?: return
                 submit { snapshot -> cardType?.let { CardFunctionState.enabled(snapshot, it, type, event.getBoolean("value"), payMaximum) }
@@ -186,11 +175,6 @@ open class CardManagementActivity : M3eSettingsActivity() {
             putString("message", message)
             putInt("minimum", functions?.minimum ?: if (cardType == "camera") 4 else 1)
             putInt("maximum", functions?.maximum ?: if (cardType == null) Int.MAX_VALUE else if (cardType == "camera") 6 else payMaximum)
-            if (cardType != null) {
-                putParcelableArrayList("backgrounds", ArrayList(backgrounds.orEmpty()))
-                val selected = display?.let { CardFunctionState.background(it, cardType!!) }
-                putString("backgroundName", selected?.first); putInt("backgroundStrategy", selected?.second ?: 1)
-            }
             putParcelableArrayList("cards", if (cardType != null) ArrayList(functions?.functions.orEmpty().map { function -> Bundle().apply {
                 putString("type", function.type); putString("title", function.title); putBoolean("enabled", function.enabled)
             } }) else ArrayList(display?.cards.orEmpty().map { card -> Bundle().apply {
