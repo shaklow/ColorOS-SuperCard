@@ -41,7 +41,7 @@ internal object NativePayLauncher {
             val source = original.build.invoke(original.builder, context, function) as? Intent
                 ?: error("支付入口暂不可用")
             val intent = Intent(source).setFlags(if (retry) 872415232 else 807403520)
-            PayUserRouting.start(context, intent, ActivityOptions.makeBasic().setLaunchDisplayId(display).toBundle(), app, user, display)
+            PayUserRouting.startEmbedded(context, intent, ActivityOptions.makeBasic().setLaunchDisplayId(display).toBundle(), app, user, display)
         }
     }
 }

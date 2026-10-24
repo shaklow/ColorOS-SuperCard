@@ -32,14 +32,14 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
     private var session: NativePaySession? = null
     private var output: Surface? = null
     private var active = false
-    private var frames = false
-    private var pageSettled = false
+    private var revealGate = NativePayRevealGate(false)
     private var touchEnabled = false
     private var request = 0L
     private var preparing = false
     private var message: String? = null
     private val refresh = Runnable { stopPayment(); readConfiguration() }
-    val interactive get() = frames && pageSettled && session?.interactive(touchEnabled) == true
+    private val revealPage = Runnable { if (session != null && active && revealGate.reveal(SystemClock.elapsedRealtime())) render() }
+    val interactive get() = revealGate.revealed && session?.interactive(touchEnabled) == true
     init {
         addView(surface, LayoutParams(-1, -1))
         MaterialUiArchive.update(surface, MaterialUiArchive.Operation.BIND_PAY, Consumer<Bundle> { event ->
@@ -68,7 +68,10 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
                 return true
             }
             override fun onSurfaceTextureUpdated(value: SurfaceTexture) {
-                if (texture === target && session != null && !frames) { frames = true; render() }
+                if (texture === target && session != null) {
+                    revealGate.frame(SystemClock.elapsedRealtime())
+                    scheduleReveal()
+                }
             }
         }
         target.setOnClickListener { if (texture === target && !interactive) fullscreen() }
@@ -96,7 +99,7 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
             putStringArray("types", choices.map { it.type }.toTypedArray())
             putStringArray("titles", choices.map { it.title }.toTypedArray())
             putString("selected", selected)
-            putBoolean("loading", selected != null && (!frames || !pageSettled))
+            putBoolean("loading", selected != null && !revealGate.revealed)
             message?.let { putString("message", it) }
         })
     }
@@ -116,7 +119,8 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
     private fun choose(function: String) {
         if (!active || choices.none { it.type == function }) return
         stopPayment(false)
-        selected = function; message = null; frames = false
+        selected = function; message = null
+        revealGate = NativePayRevealGate(NativePayPolicy.scan(function))
         touchEnabled = PayTouchSettings.enabled(context, function)
         render(); createTexture()
     }
@@ -149,11 +153,11 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
                     next = NativePaySession(NativePayBackend(context), function, user, object : NativePaySession.Events {
                         override fun changed() {
                             if (session !== next) return
-                            pageSettled = next.reachedPage
+                            if (!revealGate.revealed) {
+                                revealGate.page(SystemClock.elapsedRealtime(), next.reachedPage, next.needsRetry)
+                                main.removeCallbacks(revealPage)
+                            }
                             val page = next.pageGeneration
-                            if (!pageSettled) main.postDelayed({
-                                if (session === next && next.pageGeneration == page && next.hasPage) { pageSettled = true; render() }
-                            }, 1300)
                             if (next.needsRetry) main.postDelayed({
                                 if (session === next && next.pageGeneration == page) try { next.retry() } catch (error: Exception) { fail(error) }
                             }, 1500)
@@ -179,13 +183,18 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
                         }
                     }, 500)
                     main.postDelayed({
-                        if (session === next && (!frames || !next.hasPage)) fail(IllegalStateException("支付页面尚未就绪，请重试"))
+                        if (session === next && !revealGate.revealed) fail(IllegalStateException("支付页面尚未就绪，请重试"))
                     }, 10_000)
                 } catch (error: Exception) { fail(error) }
                 catch (error: LinkageError) { fail(error) }
             }
         }
         ready.run()
+    }
+    private fun scheduleReveal() {
+        if (revealGate.revealed) return
+        main.removeCallbacks(revealPage)
+        revealGate.remaining(SystemClock.elapsedRealtime())?.let { main.postDelayed(revealPage, it) }
     }
     private fun fullscreen() {
         val current = session ?: return
@@ -206,7 +215,7 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
         finally {
             output?.release(); output = null
             if (oldTexture?.parent === viewport) viewport.removeView(oldTexture)
-            frames = false; pageSettled = false
+            revealGate = NativePayRevealGate(selected?.let(NativePayPolicy::scan) == true)
             if (reset) { selected = null; render() }
         }
     }

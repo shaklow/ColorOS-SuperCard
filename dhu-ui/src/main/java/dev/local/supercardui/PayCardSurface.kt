@@ -5,6 +5,7 @@ import android.content.res.ColorStateList
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
@@ -13,6 +14,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.appcompat.view.ContextThemeWrapper
+import com.google.android.material.loadingindicator.LoadingIndicator
 import java.util.function.Consumer
 
 /** PAY chrome owns no account, app launch, payment content or display. */
@@ -24,31 +26,38 @@ object PayCardSurface {
     private class Page(private val context: Context) {
         private val d = CardDesign(context)
         var action: Consumer<Bundle>? = null
-        private val idle = FrameLayout(context).apply { tag = "pay_idle" }
-        private val opened = FrameLayout(context).apply { tag = "pay_opened"; visibility = View.GONE }
+        private val idle = FrameLayout(context).apply { tag = "pay_idle"; clipChildren = false; clipToPadding = false }
+        private val opened = FrameLayout(context).apply { tag = "pay_opened"; visibility = View.INVISIBLE }
         private val viewport = FrameLayout(context).apply {
             tag = "pay_viewport"; background = d.shape(ColorStateList.valueOf(android.graphics.Color.BLACK), R.dimen.card_inner_corner)
             clipToOutline = true; outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         }
         private val title = d.text("PAY", 15, bold = true).apply { tag = "pay_title"; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
         private val message = d.text("请选择支付功能", 14, secondary = true).apply { tag = "pay_message"; gravity = Gravity.CENTER }
-        private val loading = d.text("正在打开…", 14).apply {
-            tag = "pay_loading"; gravity = Gravity.CENTER; isClickable = true
+        private val loading = FrameLayout(context).apply {
+            tag = "pay_loading"; isClickable = true
             background = d.shape(ColorStateList.valueOf(d.color(com.google.android.material.R.attr.colorSurfaceContainerLow)), R.dimen.card_inner_corner)
+            addView(LoadingIndicator(context).apply {
+                tag = "pay_loading_indicator"; contentDescription = "正在加载支付页面"
+            }, FrameLayout.LayoutParams(d.dp(48), d.dp(48), Gravity.CENTER))
         }
-        private val tiles = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+        private val tiles = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; clipChildren = false; clipToPadding = false }
         private val tabs = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL; tag = "pay_tabs" }
         private val tabScroll = HorizontalScrollView(context).apply { isHorizontalScrollBarEnabled = false; isFillViewport = true; addView(tabs) }
-        private val shortcuts = ScrollView(context).apply { isFillViewport = false; addView(tiles) }
+        private val shortcuts = ScrollView(context).apply { isFillViewport = false; clipChildren = false; clipToPadding = false; addView(tiles) }
         private var types = emptyList<String>()
         private var labels = emptyList<String>()
         private var selected: String? = null
-        val root = FrameLayout(context).apply {
+        private var pending: ViewTreeObserver.OnPreDrawListener? = null
+        val root = object : FrameLayout(context) {
+            override fun onDetachedFromWindow() { cancelMotion(); super.onDetachedFromWindow() }
+        }.apply {
             tag = this@Page
             background = d.shape(ColorStateList.valueOf(d.color(com.google.android.material.R.attr.colorSurfaceContainerLow)), R.dimen.card_surface_corner)
             clipToOutline = true
             outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         }
+        private val motion = PayCardMotion(root, idle, opened, shortcuts)
         init {
             val heading = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL }
             heading.addView(ImageView(context).apply {
@@ -129,7 +138,7 @@ object PayCardSurface {
             // OEM shortcut ordering fills a column from top to bottom before the next column.
             val columns = (types.size + 1) / 2
             for (column in 0 until columns) {
-                val group = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+                val group = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; clipChildren = false; clipToPadding = false }
                 for (row in 0..1) {
                     val index = column * 2 + row
                     if (index >= types.size) break
@@ -149,19 +158,44 @@ object PayCardSurface {
             val nextTypes = state.getStringArray("types")?.toList() ?: emptyList()
             val nextLabels = state.getStringArray("titles")?.toList() ?: emptyList()
             require(nextTypes.size == nextLabels.size && nextTypes.distinct().size == nextTypes.size)
-            if (nextTypes != types || nextLabels != labels) { types = nextTypes; labels = nextLabels; rebuild() }
+            val wasOpened = selected != null
+            if (nextTypes != types || nextLabels != labels) { cancelMotion(); types = nextTypes; labels = nextLabels; rebuild() }
             selected = state.getString("selected")?.takeIf { it in types }
-            idle.visibility = if (selected == null) View.VISIBLE else View.GONE
-            opened.visibility = if (selected == null) View.GONE else View.VISIBLE
             message.text = state.getString("message", if (types.isEmpty()) "请在右上角设置中选择支付功能" else "请选择支付功能")
             title.text = selected?.let { labels[types.indexOf(it)] } ?: "PAY"
-            loading.text = state.getString("message", "正在打开…")
             loading.visibility = if (state.getBoolean("loading") && selected != null) View.VISIBLE else View.GONE
             tabs.visibility = if (types.size > 1) View.VISIBLE else View.GONE
             tabScroll.visibility = tabs.visibility
             val bottom = if (types.size > 1) 85 else 21
             for (view in listOf(viewport, loading)) view.layoutParams = (view.layoutParams as FrameLayout.LayoutParams).apply { bottomMargin = d.dp(bottom) }
             types.forEach { type -> root.findViewWithTag<View>("pay_tab_$type")?.isSelected = type == selected }
+            if (wasOpened != (selected != null)) transition(selected != null)
+        }
+        private fun cancelMotion() {
+            pending?.let { if (root.viewTreeObserver.isAlive) root.viewTreeObserver.removeOnPreDrawListener(it) }
+            pending = null; motion.cancel(selected != null)
+        }
+        private fun transition(enter: Boolean) {
+            cancelMotion()
+            if (!root.isAttachedToWindow || !root.isLaidOut || !android.animation.ValueAnimator.areAnimatorsEnabled()) {
+                motion.cancel(enter); return
+            }
+            idle.visibility = View.VISIBLE; opened.visibility = View.VISIBLE
+            opened.alpha = if (enter) 0f else 1f
+            pending = object : ViewTreeObserver.OnPreDrawListener {
+                override fun onPreDraw(): Boolean {
+                    root.viewTreeObserver.removeOnPreDrawListener(this); pending = null
+                    val pairs = if (types.size > 1) types.mapNotNull { type ->
+                        val source = root.findViewWithTag<View>("pay_function_$type")
+                        val target = root.findViewWithTag<View>("pay_tab_$type")
+                        if (source != null && target != null) source to target else null
+                    } else emptyList()
+                    motion.start(enter, pairs)
+                    return true
+                }
+            }
+            root.viewTreeObserver.addOnPreDrawListener(checkNotNull(pending))
+            root.invalidate()
         }
     }
 }

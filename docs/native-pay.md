@@ -1,4 +1,4 @@
-# 自研 PAY 支付卡（0.2.37）
+# 自研 PAY 支付卡（0.2.38）
 
 PAY 与校园卡、LENS 共用 NativeCardHost 的原版 288×466dp 几何、跟手唤出、连续切卡和叠放收起。NativePayCard 与私有 UI 的 PayCardSurface 替换原 PayCardView；NativePaySession 与 NativePayBackend 接管副屏、输入、任务和释放，不创建原 PayVirtualViewManager、FunctionBean、PayCardViewModel 或 CardEventHandler。
 
@@ -9,6 +9,10 @@ PAY 与校园卡、LENS 共用 NativeCardHost 的原版 288×466dp 几何、跟�
 配置存在未迁移的已启用卡片、PAY 功能或协议未就绪时，默认手势继续使用原完整卡包。只启用 PAY、校园卡和 LENS 且功能均受支持时，自研核心按原保存顺序接手。首页预览加入 PAY，原完整卡包入口继续保留。
 
 ## 业务与系统边界
+
+入口使用原 PayCardAnimator 的 350ms 收拢、50ms 延后淡入和两条贝塞尔曲线，图标移动到底部，返回使用原 200ms 淡出。动画只移动现有入口视图，不复制支付画面；取消、重新选择和离开窗口会恢复视图属性，旧动画不能重新打开页面。加载遮罩采用 Material 1.14.0 的 M3 Expressive `LoadingIndicator`，替换“正在打开”文字。
+
+仅原生 PAY 副屏启动附加无入场动画选项，SDK 原参数、账号和显式全屏选项继续保留。目标页面之后必须有新帧，至少等待 650ms，并在停止更新 180ms 后才移除不透明遮罩；未知页面保留 1300ms 准备时间，支付宝 SchemeLauncher 不作为可显示页面。连续出帧的扫一扫预览在最短准备时间后显示，付款码不会因等待达到固定时长而露出仍在运动的画面。首次准备超过 10 秒退回入口并可重试。同一页面的付款码刷新不重新遮罩，不读取或缓存付款像素。这里判断的是页面和帧的稳定性，不能判断第三方支付应用内部的联网结果；微信和支付宝实机的内部页面时序仍需验收。
 
 - NativePayLauncher 只复用原 PayCardSDKLauncher 与 PayCardIntentBuilder 的启动协议，微信扫码、付款码及乘车小程序的参数保持原样。支付宝继续使用原深链，保留原启动 flags 及 SchemeLauncherActivity 卡住 1.5 秒后的一次重试。
 - PayUserSettings、PayUserRouting 和 PaySessionState 继续提供独立的微信/支付宝账号选择、显式用户与显示、分身跳过选择器、微信 SDK 用户 Context，以及旧请求失效检查。新会话发布之前清理旧会话，关闭时仅能清理自己的快照。

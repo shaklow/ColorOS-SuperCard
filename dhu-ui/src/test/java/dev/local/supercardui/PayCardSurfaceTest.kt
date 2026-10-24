@@ -9,6 +9,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.TextView
+import com.google.android.material.loadingindicator.LoadingIndicator
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -38,14 +39,56 @@ class PayCardSurfaceTest {
         val content = View(root.context); viewport.addView(content)
         PayCardSurface.render(root, selection().apply { putString("selected", "wx_pay"); putBoolean("loading", true) })
         assertSame(viewport, content.parent)
+        assertTrue(root.findViewWithTag<View>("pay_loading_indicator") is LoadingIndicator)
+        assertEquals(View.VISIBLE, root.findViewWithTag<View>("pay_loading").visibility)
+        assertTrue(descendants(root).filterIsInstance<TextView>().none { it.text.contains("正在打开") })
         assertTrue(root.findViewWithTag<View>("pay_tab_wx_pay").isSelected)
         PayCardSurface.render(root, selection().apply { putString("selected", "alipay_pay") })
+        assertEquals(View.GONE, root.findViewWithTag<View>("pay_loading").visibility)
         assertSame(viewport, content.parent)
         root.findViewWithTag<View>("pay_fullscreen").performClick()
         assertEquals("fullscreen", actions.last().getString("action"))
         PayCardSurface.render(root, Bundle())
         assertNull(root.findViewWithTag<View>("pay_function_wx_pay"))
         assertEquals(View.VISIBLE, root.findViewWithTag<View>("pay_idle").visibility)
+    }
+    @Test @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun shortcutsGatherIntoTabsAndCancellationCannotReopenThePage() {
+        val root = PayCardSurface.create(RuntimeEnvironment.getApplication()) as ViewGroup
+        PayCardSurface.render(root, selection())
+        val idle = root.findViewWithTag<ViewGroup>("pay_idle")
+        val opened = root.findViewWithTag<View>("pay_opened").apply { visibility = View.VISIBLE }
+        root.measure(exact(576), exact(932)); root.layout(0, 0, 576, 932)
+        val source = root.findViewWithTag<View>("pay_function_wx_pay")
+        val target = root.findViewWithTag<View>("pay_tab_wx_pay")
+        val scroll = source.parent.parent.parent as View
+        val motion = PayCardMotion(root, idle, opened, scroll)
+        val opening = motion.start(true, listOf(source to target))
+        opening.currentPlayTime = 175
+        assertTrue(source.translationY > 0f)
+        assertTrue(opened.alpha > 0f && opened.alpha < 1f)
+        assertTrue(descendants(source).filterIsInstance<TextView>().single().alpha < 1f)
+        assertEquals(0f, target.alpha)
+        preview(root, "native-pay-transition-175-${android.os.Build.VERSION.SDK_INT}")
+        opening.end()
+        assertEquals(View.GONE, idle.visibility)
+        assertEquals(0f, source.translationY)
+        assertEquals(1f, target.alpha)
+        val closing = motion.start(false, emptyList())
+        closing.currentPlayTime = 100
+        assertTrue(idle.alpha > 0f && idle.alpha < 1f)
+        motion.cancel(false)
+        closing.end()
+        assertEquals(View.VISIBLE, idle.visibility)
+        assertEquals(View.INVISIBLE, opened.visibility)
+        assertEquals(1f, idle.alpha)
+        PayCardSurface.render(root, selection().apply { putString("selected", "wx_pay"); putBoolean("loading", true) })
+        root.measure(exact(576), exact(932)); root.layout(0, 0, 576, 932)
+        val indicator = root.findViewWithTag<View>("pay_loading_indicator")
+        val mask = root.findViewWithTag<ViewGroup>("pay_loading")
+        assertEquals(mask.width / 2, indicator.left + indicator.width / 2)
+        assertEquals(mask.height / 2, indicator.top + indicator.height / 2)
+        preview(root, "native-pay-loading-${android.os.Build.VERSION.SDK_INT}")
     }
     @Test @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun originalViewportSettingsAndLabelsFitBothThemesAndLargerText() {
@@ -81,5 +124,13 @@ class PayCardSurfaceTest {
         }
     }
     private fun exact(n: Int) = View.MeasureSpec.makeMeasureSpec(n, View.MeasureSpec.EXACTLY)
+    private fun preview(root: View, name: String) {
+        System.getenv("SUPERCARD_PREVIEW_DIR")?.let { directory ->
+            val bitmap = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
+            root.draw(Canvas(bitmap))
+            val file = File(directory, "$name.png"); file.parentFile?.mkdirs()
+            file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
+        }
+    }
     private fun descendants(root: View): List<View> = listOf(root) + if (root is ViewGroup) (0 until root.childCount).flatMap { descendants(root.getChildAt(it)) } else emptyList()
 }
