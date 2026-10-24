@@ -39,6 +39,7 @@ public final class CouponRefreshCoordinator {
     private static final String USER_SWITCHED = "android.intent.action.USER_SWITCHED";
     private static Application host;
     private static boolean installed, visible;
+    private static Object nativeOwner;
     private static long generation;
     private static JSONObject snapshot;
     private static String accountKey;
@@ -130,12 +131,31 @@ public final class CouponRefreshCoordinator {
     /** Invoke once for every whole card-pack opening, even when another card is selected. */
     public static void onCardPackShown(Application application) {
         install(application);
-        synchronized (LOCK) { visible = true; }
+        synchronized (LOCK) { if (nativeOwner != null) return; visible = true; }
         refresh(application, "cardpack_show");
     }
 
+    /** Native windows own their refresh session; late legacy callbacks cannot clear it. */
+    public static void onNativeCardPackShown(Application application, Object owner) {
+        install(application);
+        synchronized (LOCK) {
+            if (nativeOwner == owner && visible) return;
+            nativeOwner = java.util.Objects.requireNonNull(owner); visible = true;
+        }
+        refresh(application, "native_cardpack_show");
+    }
+
+    public static void onNativeCardPackHidden(Object owner) {
+        synchronized (LOCK) {
+            if (nativeOwner != owner) return;
+            nativeOwner = null; visible = false;
+        }
+        MAIN.removeCallbacks(CHANGED_REFRESH);
+        invalidate();
+    }
+
     public static void onCardPackHidden() {
-        synchronized (LOCK) { visible = false; }
+        synchronized (LOCK) { if (nativeOwner != null) return; visible = false; }
         MAIN.removeCallbacks(CHANGED_REFRESH);
         invalidate();
     }

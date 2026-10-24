@@ -40,6 +40,10 @@ public final class DhuCardSurface {
     public static void renderPay(View root, Bundle state) { PayCardSurface.render(root, state); }
     public static void bindPay(View root, java.util.function.Consumer<Bundle> action) { PayCardSurface.bind(root, action); }
 
+    public static View createCoupon(Context context) { return CouponCardSurface.create(context); }
+    public static void renderCoupon(View root, Bundle state) { CouponCardSurface.render(root, state); }
+    public static void bindCoupon(View root, java.util.function.Consumer<Bundle> action) { CouponCardSurface.bind(root, action); }
+
     public static void stylePay(Context resources, String part, View[] views) { PayCardAppearance.style(resources, part, views); }
 
     public static View createSettings(Context resources, String page) { return SettingsSurface.create(resources, page); }

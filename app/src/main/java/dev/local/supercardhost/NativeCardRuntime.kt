@@ -59,11 +59,7 @@ internal object NativeCardRuntime {
     private fun syncRouting() {
         val host = application ?: return
         val raw = Settings.Secure.getString(host.contentResolver, "card_setting_data")
-        val enabled = if (raw.isNullOrBlank()) emptyList() else CardManagementState.parse(raw).cards.filter { it.enabled }
-        val payMigrated = NativePayLauncher.ready && NativePayConfiguration.supported(raw)
-        val allMigrated = enabled.isNotEmpty() && enabled.all {
-            it.type == "dhu" || it.type == "camera" || (it.type == "pay" && payMigrated)
-        }
+        val allMigrated = NativeCardCatalog.complete(raw, NativePayLauncher.ready)
         val next = input != null && cards().isNotEmpty() && mode != Mode.LEGACY && (mode == Mode.NATIVE || allMigrated) &&
             Settings.Secure.getInt(host.contentResolver, "card_service_total_switch", 1) == 1 &&
             host.getSystemService(PowerManager::class.java)?.isInteractive == true
@@ -155,14 +151,13 @@ internal object NativeCardRuntime {
     private fun cards(): List<String> {
         val host = checkNotNull(application)
         val raw = Settings.Secure.getString(host.contentResolver, "card_setting_data")
-        if (raw.isNullOrBlank()) return listOf("pay", "dhu", "camera")
-        return CardManagementState.parse(raw).cards.filter { it.enabled && it.type in listOf("pay", "dhu", "camera") }.map { it.type }
+        return NativeCardCatalog.cards(raw)
     }
     @JvmStatic fun show() {
         check(Looper.myLooper() == Looper.getMainLooper())
         val host = checkNotNull(application) { "新卡包服务尚未连接" }
         check(Settings.Secure.getInt(host.contentResolver, "card_service_total_switch", 1) == 1) { "请先开启超级卡包" }
-        check(cards().isNotEmpty()) { "请在卡片管理启用支付卡、LENS 或校园卡" }
+        check(cards().isNotEmpty()) { "请在卡片管理启用支付卡、卡券、LENS 或校园卡" }
         check(input != null) { "系统滑动手势暂不可用，请重新载入卡包" }
         mode = Mode.NATIVE; syncRouting()
         PluginRuntime.hide()

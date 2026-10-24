@@ -62,10 +62,12 @@ public final class SettingsStartupTest extends Instrumentation {
             checkFloatingSessions();
             try (NativeCoreCheck nativeCore = new NativeCoreCheck(this, secureNative)) {
                 nativeCore.run();
+                new NativeCouponCheck(this).run();
                 android.util.Log.i("SuperCardNativeTest", "Native regression passed; starting secure Lens display check");
                 checkLensDisplay(nativeCore.container());
             }
             result.putString("stream", "Settings startup: 4 entry points passed\nCard management: persistence, ordering and legacy entry passed\nGesture settings: session, preview ownership and new page passed\nFloating cards: window embedding passed\nFloating lifecycle: detach/reattach passed\nLens display: embedded activity and touch passed\nRoot display: callback wrapper passed\nNative core: secure window, switching and lock cleanup passed\nNative PAY: mixed deck, secure session touch and cleanup passed\n"
+                    + "Native coupons: secure detail, wallet updates, local removal and cleanup passed\n"
                     + (secureNative ? "Secure native display: actual secure secondary display and touch passed\nNative gestures: monitored edge pull, swipe, cancellation and animations passed\n" : ""));
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {

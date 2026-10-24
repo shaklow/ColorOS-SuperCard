@@ -76,13 +76,25 @@ public final class CouponImageLoader {
         bind(image, couponKey, imageUrl, null);
     }
 
+    /** Release only this detail's download; other cards and the current wallet session stay live. */
+    public static void clear(ImageView image) {
+        if (Looper.myLooper() != Looper.getMainLooper()) { MAIN.post(() -> clear(image)); return; }
+        Binding previous = BINDINGS.remove(image);
+        if (previous != null) { previous.cancel(); image.removeOnAttachStateChangeListener(previous); }
+        image.setImageDrawable(null);
+    }
+
     public static void bind(ImageView image, String couponKey, String imageUrl, TextView hint) {
+        bind(image, couponKey, imageUrl, hint, null);
+    }
+
+    public static void bind(ImageView image, String couponKey, String imageUrl, TextView hint, Runnable completed) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            MAIN.post(() -> bind(image, couponKey, imageUrl, hint)); return;
+            MAIN.post(() -> bind(image, couponKey, imageUrl, hint, completed)); return;
         }
         Binding old = BINDINGS.remove(image);
         if (old != null) { old.cancel(); image.removeOnAttachStateChangeListener(old); }
-        Binding binding = new Binding(image, couponKey, imageUrl, hint);
+        Binding binding = new Binding(image, couponKey, imageUrl, hint, completed);
         BINDINGS.put(image, binding);
         image.addOnAttachStateChangeListener(binding);
         image.setVisibility(View.VISIBLE);
@@ -95,15 +107,17 @@ public final class CouponImageLoader {
         final WeakReference<ImageView> image;
         final WeakReference<TextView> hint;
         final String url, cacheKey;
+        final Runnable completed;
         final AtomicInteger generation = new AtomicInteger();
         volatile HttpURLConnection connection;
         volatile Future<?> work, timeout;
         boolean loaded;
 
-        Binding(ImageView image, String couponKey, String url, TextView hint) {
+        Binding(ImageView image, String couponKey, String url, TextView hint, Runnable completed) {
             this.image = new WeakReference<>(image);
             this.hint = new WeakReference<>(hint);
             this.url = url;
+            this.completed = completed;
             cacheKey = couponKey + '\u0000' + url;
         }
 
@@ -115,7 +129,9 @@ public final class CouponImageLoader {
             if (cached != null && !cached.isRecycled()) {
                 loaded = true; target.setImageBitmap(cached);
                 target.setContentDescription("钱包原始二维码");
-                setHint("二维码来自钱包，请向商家出示"); return;
+                setHint("二维码来自钱包，请向商家出示");
+                if (completed != null) completed.run();
+                return;
             }
             int token = generation.incrementAndGet();
             long deadline = SystemClock.elapsedRealtime() + TIMEOUT_MS;
@@ -145,6 +161,7 @@ public final class CouponImageLoader {
                                 current.setVisibility(View.VISIBLE);
                                 current.setContentDescription("钱包原始二维码");
                                 setHint("二维码来自钱包，请向商家出示");
+                                if (completed != null) completed.run();
                             }
                         });
                     } catch (Throwable error) {
@@ -172,6 +189,7 @@ public final class CouponImageLoader {
             if (generation.get() != token || loaded || target == null || BINDINGS.get(target) != this) return;
             target.setContentDescription("二维码图片暂不可用，请在钱包查看");
             setHint("二维码图片暂不可用，可打开钱包查看");
+            if (completed != null) completed.run();
             long now = SystemClock.elapsedRealtime();
             if (target.isAttachedToWindow() && (lastFailureToast == 0 || now - lastFailureToast > 20_000)) {
                 lastFailureToast = now;
