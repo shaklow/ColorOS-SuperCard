@@ -38,7 +38,7 @@ internal object NativeCardRuntime {
             val host = application
             if (registered && host != null && input != null && window == null &&
                 host.getSystemService(PowerManager::class.java)?.isInteractive == true) try {
-                window = NativeCardHost(host, allowed = ::available)
+                window = NativeCardHost(host, allowed = ::available).also { it.warm(cards()) }
             } catch (error: Throwable) {
                 mode = Mode.LEGACY; inputEnabled = false
                 android.util.Log.w("SuperCardNative", "Cannot warm card surface", error)

@@ -17,12 +17,15 @@ import org.robolectric.annotation.Config
 class NativeGestureViewportTest {
     private class Events : NativeGestureViewport.Events {
         var busy = false; var starts = 0
+        var interrupt = false; var content: View? = null
         val ends = mutableListOf<Boolean>(); val queued = mutableListOf<Int>()
         override fun busy() = busy
         override fun begin(): Boolean { starts++; return true }
         override fun drag(distance: Float) = Unit
         override fun end(distance: Float, velocity: Float, cancel: Boolean) { ends.add(cancel) }
         override fun queue(delta: Int) { queued.add(delta) }
+        override fun interrupt() = interrupt
+        override fun content() = content
     }
     private fun scenario(texture: Boolean = false, busy: Boolean = false, test: (NativeGestureViewport, Events, MutableList<Int>) -> Unit) {
         val controller = Robolectric.buildActivity(Activity::class.java).setup()
@@ -52,6 +55,25 @@ class NativeGestureViewportTest {
         assertEquals(1, events.starts); assertEquals(listOf(false), events.ends)
         assertEquals(1, actions.count { it == MotionEvent.ACTION_CANCEL })
         assertFalse(actions.contains(MotionEvent.ACTION_UP))
+    }
+    @Test fun newDownCanImmediatelyTakeOverAnInFlightPage() = scenario { root, events, actions ->
+        events.interrupt = true
+        send(root, MotionEvent.ACTION_DOWN, 230f, 210f, 100)
+        assertEquals(1, events.starts)
+        send(root, MotionEvent.ACTION_MOVE, 30f, 210f, 200)
+        send(root, MotionEvent.ACTION_UP, 30f, 210f, 300)
+        assertEquals(listOf(false), events.ends)
+        assertTrue(events.queued.isEmpty()); assertTrue(actions.isEmpty())
+    }
+    @Test fun textureInAnInactiveRearCardDoesNotBlockTheActualFrontCard() = scenario { root, events, _ ->
+        events.content = root.getChildAt(0)
+        root.addView(TextureView(root.context), 0, FrameLayout.LayoutParams(280, 450))
+        root.measure(View.MeasureSpec.makeMeasureSpec(280, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(450, View.MeasureSpec.EXACTLY))
+        root.layout(0, 0, 280, 450)
+        send(root, MotionEvent.ACTION_DOWN, 230f, 210f, 100)
+        send(root, MotionEvent.ACTION_MOVE, 30f, 210f, 200)
+        send(root, MotionEvent.ACTION_UP, 30f, 210f, 300)
+        assertEquals(1, events.starts)
     }
     @Test fun verticalScrollAndCameraTextureKeepTheirOwnTouchStreams() {
         scenario { root, events, actions ->

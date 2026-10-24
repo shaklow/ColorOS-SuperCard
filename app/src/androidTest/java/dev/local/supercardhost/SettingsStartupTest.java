@@ -37,14 +37,21 @@ import java.util.function.BiConsumer;
 /** Installed unified APK: settings startup and private M3E content in a non-Activity window. */
 public final class SettingsStartupTest extends Instrumentation {
     private boolean secureNative;
+    private boolean nativeOnly;
     @Override public void onCreate(Bundle arguments) {
         secureNative = arguments != null && "true".equals(arguments.getString("secureNative"));
+        nativeOnly = arguments != null && "true".equals(arguments.getString("nativeOnly"));
         super.onCreate(arguments); start();
     }
 
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
+            if (nativeOnly) {
+                try (NativeCoreCheck nativeCore = new NativeCoreCheck(this, secureNative)) { nativeCore.run(); }
+                result.putString("stream", "Native card layout, live stack, screen-edge travel, swipes and cleanup passed\n");
+                finish(Activity.RESULT_OK, result); return;
+            }
             checkPage("HostActivity", "show_cards", Intent.CATEGORY_LAUNCHER);
             checkPage("HostActivity", "open_runtime", "de.robv.android.xposed.category.MODULE_SETTINGS");
             checkPage("HostToolsActivity", "toggle_wx_scan", null);

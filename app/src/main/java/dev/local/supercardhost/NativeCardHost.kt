@@ -5,66 +5,110 @@ import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.content.Context
 import android.content.ContextWrapper
+import android.graphics.Color
+import android.graphics.Outline
 import android.graphics.PixelFormat
+import android.graphics.Rect
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
-import android.view.Gravity
-import android.view.KeyEvent
-import android.view.MotionEvent
-import android.view.View
-import android.view.WindowManager
-import android.view.animation.PathInterpolator
+import android.view.*
+import android.view.animation.LinearInterpolator
 import android.widget.FrameLayout
 import java.util.function.Consumer
+import kotlin.math.*
 
-/** Owns a secure card window, live page transitions and follow-finger entrance. */
+/** Secure live stack: continuous scroll, original snap dynamics, no view recreation on swipes. */
 internal class NativeCardHost(private val context: Context, private val type: Int = 2009,
     private val allowed: () -> Boolean) : AutoCloseable {
-    interface Content : AutoCloseable { val view: View; fun active(value: Boolean) {} }
+    interface Content : AutoCloseable {
+        val view: View
+        fun active(value: Boolean) {}
+        fun dispose() = close()
+    }
     private val windows = requireNotNull(context.getSystemService(WindowManager::class.java))
+    // Configuration changes replace this host; no display queries inside an animation frame.
+    private val density = context.resources.displayMetrics.density
+    private val layout = android.util.DisplayMetrics().also { windows.defaultDisplay.getRealMetrics(it) }
+        .let { NativeCardLayout.measure(it.widthPixels, it.heightPixels, density) }
     private val ownerContext = object : ContextWrapper(context), CardWindowOwner {
         override fun hideCard() = hide()
-        override fun secureCard(secure: Boolean) = Unit // The whole window stays FLAG_SECURE.
+        override fun secureCard(secure: Boolean) = Unit
     }
     private val surface = MaterialUiArchive.create(ownerContext, MaterialUiArchive.Operation.NATIVE_CARD) as View
     private val body = requireNotNull(surface.findViewWithTag<FrameLayout>("native_content"))
-    private val root = NativeGestureViewport(context, object : NativeGestureViewport.Events {
-        override fun busy() = animating || edgeDragging
+    private val root: NativeGestureViewport = NativeGestureViewport(context, object : NativeGestureViewport.Events {
+        override fun busy() = edgeDragging || dismissing || (rootAnimating && abs(root.translationX) > ViewConfiguration.get(context).scaledPagingTouchSlop / 3f)
         override fun begin() = beginPage()
         override fun drag(distance: Float) = dragPage(distance)
-        override fun end(distance: Float, velocity: Float, cancel: Boolean) = endPage(distance, velocity, cancel)
+        override fun end(distance: Float, velocity: Float, cancel: Boolean) = endPage(velocity, cancel)
         override fun queue(delta: Int) { if (delta != 0) move(delta) }
-    }).apply { addView(surface, FrameLayout.LayoutParams(-1, -1)) }
+        override fun inside(x: Int, y: Int) = insideCard(x, y)
+        override fun interrupt(): Boolean {
+            if (!animating) return false
+            if (rootAnimating) {
+                stopAnimation(); root.translationX = 0f; entranceOffset = 0f; finishPages(); return false
+            }
+            val target = order.indexOf(deck.selected) * width()
+            if (abs(scroll - target) >= ViewConfiguration.get(context).scaledPagingTouchSlop / 3f) return true
+            stopAnimation(); scroll = target; finishPages(); return false
+        }
+        override fun content() = current?.view
+    }).apply {
+        clipChildren = false; clipToPadding = false
+        addView(surface, FrameLayout.LayoutParams(-1, layout.height, Gravity.BOTTOM).apply { bottomMargin = layout.bottom })
+    }
+    private val touchBounds = Rect()
+    private val screenOrigin = IntArray(2)
+    private val bodyOrigin = IntArray(2)
+    private var outsideDown: MotionEvent? = null
     private var mounted = false
     private var current: Content? = null
-    private var preview: Content? = null
-    private var previewType: String? = null
-    private var state = Bundle()
+    private val cache = linkedMapOf<String, Content>()
+    private var order = emptyList<String>()
     private var pageDragging = false
     private var edgeDragging = false
-    private var pageDirection = 0
-    private var offset = 0f
+    private var rootAnimating = false
+    private var dismissing = false
+    private var scroll = 0f
+    private var dragStart = 0f
+    private var entranceOffset = 0f
+    private var frontOffset = 0f
+    private var edgeFollow: CardFollowSpring? = null
+    private var edgeTarget = 0f
+    private var edgeFrameTime = 0L
+    private val edgeFrame = object : Choreographer.FrameCallback {
+        override fun doFrame(frameTimeNanos: Long) {
+            val follow = edgeFollow ?: return
+            if (!edgeDragging || !allowed()) { hide(); return }
+            follow.advance(edgeTarget, ((frameTimeNanos - edgeFrameTime) / 1_000_000_000f).coerceAtLeast(0f))
+            edgeFrameTime = frameTimeNanos
+            root.translationX = follow.position
+            entranceOffset = 14.4f * density * root.translationX / travel(); renderStack()
+            Choreographer.getInstance().postFrameCallback(this)
+        }
+    }
     private var settling: ValueAnimator? = null
     private var animationGeneration = 0
-    private var queued = 0
-    private val easing = PathInterpolator(.2f, 0f, .1f, 1f)
     private val deck = NativeCardDeck<Content>(::create, ::present, ::clear) {
-        android.util.Log.w("SuperCardNative", "Cannot release card", it)
+        android.util.Log.w("SuperCardNative", "Cannot deactivate card", it)
     }
     val showing get() = mounted && deck.selected != null
     val selected get() = deck.selected
     val animating get() = settling != null
-    private fun create(card: String): Content {
-        if (previewType == card && preview != null) return preview!!.also { preview = null; previewType = null }
+    private fun create(card: String): Content = cache.getOrPut(card) {
         check(allowed()) { "请先解锁手机" }
-        return when (card) {
+        when (card) {
             "dhu" -> object : Content {
                 override val view = DhuPayView(ownerContext, false).apply { setActive(false) }
                 override fun active(value: Boolean) = view.setActive(value)
-                override fun close() = view.setActive(false)
+                override fun close() { if (current !== this) view.setActive(false) }
+                override fun dispose() = view.setActive(false)
             }
             "camera" -> object : Content {
                 override val view = NativeLensCard(ownerContext, ownerContext)
-                override fun close() = view.close()
+                override fun active(value: Boolean) { if (!value) view.suspendCamera() }
+                override fun close() { if (current !== this) view.suspendCamera() }
+                override fun dispose() = view.close()
             }
             else -> error("此卡片尚未迁移")
         }
@@ -76,7 +120,37 @@ internal class NativeCardHost(private val context: Context, private val type: In
             if (key == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) { dismiss(); true } else false
         }
         root.setOnTouchListener { _, event ->
-            if (event.action == MotionEvent.ACTION_OUTSIDE) { dismiss(); true } else false
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    outsideDown?.recycle(); outsideDown = null
+                    if (insideCard(event.rawX.toInt(), event.rawY.toInt())) false
+                    else { outsideDown = MotionEvent.obtain(event); true }
+                }
+                MotionEvent.ACTION_UP -> {
+                    val down = outsideDown; outsideDown = null
+                    down?.let {
+                        val slop = ViewConfiguration.get(context).scaledTouchSlop
+                        val close = abs(event.rawX - it.rawX) < slop && abs(event.rawY - it.rawY) < slop
+                        it.recycle(); if (close) dismiss()
+                    }
+                    down != null
+                }
+                MotionEvent.ACTION_CANCEL -> { outsideDown?.recycle(); outsideDown = null; false }
+                else -> false
+            }
+        }
+    }
+    private fun insideCard(x: Int, y: Int): Boolean {
+        root.getLocationOnScreen(screenOrigin)
+        body.getLocationOnScreen(bodyOrigin)
+        // Accept the stable front slot even when its live view is still sliding into it.
+        touchBounds.set(layout.left + bodyOrigin[0], bodyOrigin[1],
+            layout.left + layout.width + bodyOrigin[0], layout.height + bodyOrigin[1])
+        if (touchBounds.contains(x, y)) return true
+        return cache.values.any {
+            if (!it.view.getGlobalVisibleRect(touchBounds)) false else {
+                touchBounds.offset(screenOrigin[0], screenOrigin[1]); touchBounds.contains(x, y)
+            }
         }
     }
     private fun bind() = MaterialUiArchive.update(surface, MaterialUiArchive.Operation.BIND_NATIVE_CARD, Consumer<Bundle> {
@@ -84,231 +158,207 @@ internal class NativeCardHost(private val context: Context, private val type: In
     })
     fun show(cards: List<String>, selected: String? = null) = mount(cards, selected, false)
     fun beginEdge(cards: List<String>) = mount(cards, null, true)
+    fun warm(cards: List<String>) { if (allowed()) cards.forEach(::create) }
     private fun mount(cards: List<String>, selected: String?, edge: Boolean) {
         if (!allowed()) { hide(); error("请先解锁手机") }
-        finishNow()
-        val previous = current
-        bind()
-        try { deck.show(cards, selected, true) } catch (error: Throwable) {
-            if (!allowed()) hide()
-            throw error
-        }
-        root.requestFocus()
-        if (previous == null) {
+        require(cards.isNotEmpty() && cards.distinct().size == cards.size)
+        if (order.isNotEmpty() && order != cards) hide()
+        stopAnimation(); pageDragging = false; edgeDragging = false
+        val opening = !mounted
+        order = cards.toList(); bind()
+        try {
+            for (card in order) {
+                val view = create(card).view
+                if (view.parent == null) {
+                    view.clipToOutline = true
+                    view.outlineProvider = object : ViewOutlineProvider() {
+                        override fun getOutline(view: View, outline: Outline) =
+                            outline.setRoundRect(0, 0, view.width, view.height, 28 * density)
+                    }
+                    view.foreground = ColorDrawable(Color.BLACK).apply { alpha = 0 }
+                    body.addView(view, FrameLayout.LayoutParams(layout.width, layout.height, Gravity.CENTER_HORIZONTAL))
+                }
+            }
+            deck.show(cards, selected, true)
+            scroll = order.indexOf(deck.selected) * width()
+            entranceOffset = if (opening) 14.4f * density else 0f
+            renderStack(); root.requestFocus()
+            if (opening) {
+                root.translationX = travel()
+                if (edge) {
+                    edgeDragging = true
+                    edgeTarget = travel(); edgeFollow = CardFollowSpring(edgeTarget)
+                    edgeFrameTime = System.nanoTime()
+                    Choreographer.getInstance().postFrameCallback(edgeFrame)
+                } else animateRoot(0f, 0f) { finishPages() }
+            } else { root.translationX = 0f; finishPages() }
+        } catch (error: Throwable) { hide(); throw error }
+    }
+    private fun present(next: Content, card: String, index: Int, count: Int) {
+        check(allowed()) { "请先解锁手机" }
+        if (!mounted) {
             root.translationX = travel()
-            if (edge) edgeDragging = true else animateRoot(0f, 0f) { current?.active(true) }
-        } else if (current !== previous) animatePage(previous, current!!, pageDirection, 0f, 0f)
+            windows.addView(root, WindowManager.LayoutParams(-1, -1, type,
+                WindowManager.LayoutParams.FLAG_SECURE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT).apply {
+                gravity = Gravity.TOP or Gravity.LEFT
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                setFitInsetsTypes(0); setTitle("SuperCardNativeWindow")
+                softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+            })
+            mounted = true
+        }
+        MaterialUiArchive.update(surface, MaterialUiArchive.Operation.RENDER_NATIVE_CARD, Bundle().apply {
+            putInt("index", index); putInt("count", count)
+            putString("title", if (card == "camera") "LENS" else "东华校园卡")
+        })
+        current = next
     }
     fun followEdge(distance: Float) {
         if (!edgeDragging) return
         if (!allowed()) { hide(); return }
-        root.translationX = (travel() - distance - dp(30)).coerceIn(0f, travel())
+        edgeTarget = (travel() - distance - 30 * density).coerceIn(0f, travel())
     }
     fun endEdge(commit: Boolean, velocity: Float) {
         if (!edgeDragging) return
-        edgeDragging = false
+        edgeDragging = false; stopEdgeFollow()
         if (!allowed()) { hide(); return }
-        animateRoot(if (commit) 0f else travel(), velocity) {
-            if (commit) current?.active(true) else hide()
-        }
-    }
-    fun move(delta: Int) {
-        if (!allowed()) { hide(); return }
-        if (delta == 0 || !showing) return
-        if (animating || edgeDragging || pageDragging) { queued = if (delta > 0) 1 else -1; return }
-        val direction = if (delta > 0) 1 else -1
-        if (deck.target(direction) == null) return
-        try {
-            pageDirection = direction; offset = 0f
-            prepare(direction)
-            commitPage(direction, 0f)
-        } catch (error: Exception) {
-            finishNow()
-            if (!allowed()) hide()
-            android.util.Log.w("SuperCardNative", "Cannot switch card", error)
-        }
-    }
-    private fun present(next: Content, card: String, index: Int, count: Int) {
-        check(allowed()) { "请先解锁手机" }
-        val previous = current
-        val nextState = Bundle().apply {
-            putInt("index", index); putInt("count", count)
-            putString("title", if (card == "camera") "LENS" else "东华校园卡")
-        }
-        try {
-            if (next.view.parent == null) {
-                if (previous != null) next.view.translationX = pageDirection * panelWidth()
-                body.addView(next.view, FrameLayout.LayoutParams(-1, -1))
-            }
-            if (!mounted) {
-                root.translationX = travel()
-                val metrics = context.resources.displayMetrics
-                windows.addView(root, WindowManager.LayoutParams(
-                    minOf(dp(280), metrics.widthPixels - dp(24)).coerceAtLeast(1),
-                    minOf(dp(450), metrics.heightPixels - dp(64)).coerceAtLeast(1), type,
-                    WindowManager.LayoutParams.FLAG_SECURE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH, PixelFormat.TRANSLUCENT).apply {
-                    gravity = Gravity.RIGHT or Gravity.CENTER_VERTICAL; x = dp(12)
-                    setTitle("SuperCardNativeWindow"); softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
-                })
-                mounted = true
-            }
-            check(allowed()) { "手机已锁定" }
-            MaterialUiArchive.update(surface, MaterialUiArchive.Operation.RENDER_NATIVE_CARD, nextState)
-            current = next; state = nextState; next.active(true)
-        } catch (error: Throwable) {
-            body.removeView(next.view); current = previous
-            if (previous == null) clear()
-            else MaterialUiArchive.update(surface, MaterialUiArchive.Operation.RENDER_NATIVE_CARD, state)
-            throw error
-        }
+        animateRoot(if (commit) 0f else travel(), velocity) { if (commit) finishPages() else hide() }
     }
     private fun beginPage(): Boolean {
         if (!allowed()) { hide(); return false }
-        if (!showing || animating || edgeDragging) return false
-        pageDragging = true; pageDirection = 0; offset = 0f
+        if (!showing || edgeDragging || rootAnimating) return false
+        stopAnimation()
+        pageDragging = true; dragStart = scroll
         return true
-    }
-    private fun prepare(direction: Int) {
-        if (pageDirection != direction || preview == null) {
-            dropPreview()
-            if (pageDirection != direction) { current?.view?.let(::reset); root.translationX = 0f }
-            pageDirection = direction
-            val target = deck.target(direction) ?: return
-            previewType = target
-            try {
-                preview = createFresh(target)
-                preview!!.view.translationX = direction * panelWidth()
-                body.addView(preview!!.view, if (direction > 0) 0 else body.childCount, FrameLayout.LayoutParams(-1, -1))
-            } catch (error: Throwable) { dropPreview(); throw error }
-        }
-    }
-    private fun createFresh(card: String): Content {
-        val pending = previewType
-        previewType = null
-        return try { create(card) } finally { previewType = pending }
     }
     private fun dragPage(distance: Float) {
         if (!pageDragging || !distance.isFinite()) return
         if (!allowed()) { hide(); return }
-        val direction = if (distance < 0) 1 else -1
-        try { prepare(direction) } catch (error: Exception) {
-            pageDragging = false; finishNow()
-            android.util.Log.w("SuperCardNative", "Cannot prepare page", error); return
-        }
-        offset = distance.coerceIn(-panelWidth(), panelWidth())
-        if (direction == -1 && deck.target(-1) == null) root.translationX = offset.coerceAtLeast(0f)
-        else {
-            root.translationX = 0f
-            renderSwipe(current!!, preview, if (preview == null) offset * .22f else offset, direction)
-        }
+        val proposed = dragStart - distance
+        root.translationX = if (abs(dragStart) < 1f && proposed < 0f) -proposed else 0f
+        scroll = CardMotionRules.dragScroll(dragStart, distance, (order.size - 1) * width())
+        renderStack()
     }
-    private fun endPage(distance: Float, velocity: Float, cancel: Boolean) {
+    private fun endPage(velocity: Float, cancel: Boolean) {
         if (!pageDragging) return
         pageDragging = false
         if (!allowed()) { hide(); return }
-        val delta = if (cancel) 0 else CardMotionRules.pageDelta(distance, velocity, panelWidth(), density())
-        if (pageDirection == -1 && deck.target(-1) == null) {
-            animateRoot(if (delta == -1) travel() else 0f, velocity) {
-                if (delta == -1) hide() else finishPages()
-            }
-        } else if (preview != null && delta == pageDirection) {
-            try { commitPage(delta, velocity) } catch (error: Exception) {
-                finishNow(); android.util.Log.w("SuperCardNative", "Cannot commit page", error)
-            }
-        } else {
-            val old = current ?: return
-            val candidate = preview; val direction = pageDirection
-            val from = if (candidate == null) offset * .22f else offset
-            animate(from, 0f, velocity, { renderSwipe(old, candidate, it, direction) }) { dropPreview(); reset(old.view) }
+        if (root.translationX > 0f) {
+            val close = !cancel && CardMotionRules.pageDelta(root.translationX, velocity, width(), density) == -1
+            animateRoot(if (close) travel() else 0f, velocity) { if (close) hide() else finishPages() }
+            return
+        }
+        val page = scroll / width()
+        val minVelocity = ViewConfiguration.get(context).scaledMinimumFlingVelocity
+        val target = if (!cancel && abs(velocity) > minVelocity) {
+            if (velocity < 0) floor(page).toInt() + 1 else ceil(page).toInt() - 1
+        } else if (cancel) (dragStart / width()).roundToInt() else page.roundToInt()
+        settlePage(target.coerceIn(0, order.lastIndex), if (cancel) 0f else -velocity)
+    }
+    fun move(delta: Int) {
+        if (!allowed()) { hide(); return }
+        if (!showing || delta == 0 || edgeDragging || rootAnimating) return
+        val target = (order.indexOf(deck.selected) + delta.sign).coerceIn(0, order.lastIndex)
+        settlePage(target, 0f)
+    }
+    private fun settlePage(target: Int, velocity: Float) {
+        stopAnimation(); pageDragging = false
+        deck.show(order, order[target], true)
+        val spring = CardSnapSpring(scroll, target * width(), velocity)
+        animate(spring.duration, { time -> scroll = spring.position(time); renderStack() }) {
+            scroll = target * width(); finishPages()
         }
     }
-    private fun commitPage(direction: Int, velocity: Float) {
-        val old = current ?: return
-        val from = offset
-        deck.move(direction, true)
-        val next = current ?: return
-        if (next === old) { dropPreview(); return }
-        animatePage(old, next, direction, from, velocity)
-    }
-    private fun renderSwipe(old: Content, next: Content?, distance: Float, direction: Int) {
-        val frame = CardMotionRules.pageFrame(distance, panelWidth(), if (direction == 0) 1 else direction, density())
-        old.view.translationX = frame.outgoing.x
-        old.view.scaleX = frame.outgoing.scale; old.view.scaleY = old.view.scaleX
-        old.view.alpha = 1f
-        next?.view?.let {
-            it.translationX = frame.incoming.x
-            it.scaleX = frame.incoming.scale; it.scaleY = it.scaleX; it.alpha = 1f
+    private fun renderStack(frontOffset: Float = 0f) {
+        this.frontOffset = frontOffset
+        val selectedIndex = order.indexOf(deck.selected)
+        for ((index, card) in order.withIndex()) {
+            val view = cache[card]?.view ?: continue
+            val position = index - scroll / width()
+            val frame = CardMotionRules.stackFrame(position, width(), density)
+            view.translationX = frame.x + if (index == selectedIndex) frontOffset else maxOf(0, index - selectedIndex) * entranceOffset
+            view.scaleX = frame.scale; view.scaleY = frame.scale; view.alpha = if (position >= 5) 0f else 1f
+            view.elevation = 0f; view.translationZ = frame.z
+            ((view as? ViewGroup)?.getChildAt(0) ?: view).elevation = frame.elevation
+            (view.foreground as ColorDrawable).alpha = (frame.shade * 255).roundToInt()
+            view.importantForAccessibility = if (index == selectedIndex) View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+                else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         }
     }
-    private fun animatePage(old: Content, next: Content, direction: Int, from: Float, velocity: Float) {
-        val actualDirection = if (direction == 0) 1 else direction
-        animate(from, -actualDirection * panelWidth(), velocity,
-            { renderSwipe(old, next, it, actualDirection) }) { finishPages(); next.active(true) }
+    private fun animateRoot(target: Float, velocity: Float, end: () -> Unit) {
+        if (target != 0f) { animateExit(velocity, false, end); return }
+        stopAnimation(); rootAnimating = true
+        val opening = target == 0f
+        val speed = abs(velocity.coerceIn(-60_000f, 60_000f))
+        val duration = .35f * if (speed > 1500) .3f else if (speed > 500) .5f else 1f
+        val translation = CardSpring(root.translationX, target, velocity, duration)
+        val front = CardSpring(0f, 0f, if (opening) velocity else 0f, .35f)
+        val rear = CardSpring(entranceOffset, 0f, if (opening) velocity * .9f else 0f, .35f)
+        animate(maxOf(translation.durationMillis, front.durationMillis, rear.durationMillis), { time ->
+            root.translationX = translation.position(time)
+            entranceOffset = rear.position(time); renderStack(front.position(time))
+        }) { root.translationX = target; entranceOffset = 0f; rootAnimating = false; end() }
     }
-    private fun animateRoot(target: Float, velocity: Float, end: () -> Unit) =
-        animate(root.translationX, target, velocity, { root.translationX = it }, end)
-    private fun animate(from: Float, to: Float, velocity: Float, frame: (Float) -> Unit, completed: () -> Unit) {
+    private fun animate(duration: Long, frame: (Float) -> Unit, end: () -> Unit) {
         val ticket = ++animationGeneration
-        val animator = ValueAnimator.ofFloat(from, to).apply {
-            duration = CardMotionRules.duration(to - from, velocity, panelWidth()); interpolator = easing
+        val animator = ValueAnimator.ofFloat(0f, duration / 1000f).apply {
+            this.duration = duration; interpolator = LinearInterpolator()
             addUpdateListener { if (ticket == animationGeneration) frame(it.animatedValue as Float) }
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
                     if (ticket != animationGeneration) return
-                    settling = null
-                    completed.invoke()
-                    val pending = queued; queued = 0
-                    if (pending != 0 && showing) move(pending)
+                    settling = null; end()
                 }
             })
         }
-        settling = animator; frame(from); animator.start()
+        settling = animator; frame(0f); animator.start()
     }
-    private fun reset(view: View) { view.translationX = 0f; view.scaleX = 1f; view.scaleY = 1f; view.alpha = 1f }
+    private fun stopAnimation() {
+        stopEdgeFollow()
+        animationGeneration++; val old = settling; settling = null; old?.cancel(); rootAnimating = false; dismissing = false
+    }
+    private fun stopEdgeFollow() {
+        Choreographer.getInstance().removeFrameCallback(edgeFrame); edgeFollow = null
+    }
     private fun finishPages() {
+        entranceOffset = 0f
         for (index in body.childCount - 1 downTo 0) {
-            val child = body.getChildAt(index)
-            if (child !== current?.view) body.removeView(child)
+            if (cache.values.none { it.view === body.getChildAt(index) }) body.removeViewAt(index)
         }
-        current?.view?.let(::reset)
         deck.releaseRetired()
-    }
-    private fun dropPreview() {
-        val pending = preview; preview = null; previewType = null
-        if (pending != null) {
-            body.removeView(pending.view)
-            try { pending.close() } catch (error: Exception) { android.util.Log.w("SuperCardNative", "Cannot release preview", error) }
-        }
-    }
-    private fun finishNow() {
-        animationGeneration++; val animation = settling; settling = null; animation?.cancel()
-        queued = 0; pageDragging = false; edgeDragging = false
-        dropPreview(); finishPages(); root.translationX = 0f
+        cache.values.forEach { it.active(it === current) }
+        renderStack()
     }
     private fun dismiss() {
-        if (!showing || animating || edgeDragging || pageDragging) return
-        animateRoot(travel(), 0f) { hide() }
+        if (!showing || edgeDragging || dismissing) return
+        pageDragging = false; animateExit(0f, true) { hide() }
+    }
+    private fun animateExit(velocity: Float, rollback: Boolean, end: () -> Unit) {
+        val from = root.translationX
+        val startEntrance = entranceOffset; val startFront = frontOffset
+        val motion = CardDismissMotion(from, travel(), if (rollback) scroll else 0f, density, velocity)
+        stopAnimation(); rootAnimating = true; dismissing = true
+        animate(motion.durationMillis, { time ->
+            root.translationX = motion.translation(time)
+            if (rollback) scroll = motion.scroll(time)
+            val remaining = 1 - motion.progress(time)
+            entranceOffset = startEntrance * remaining; renderStack(startFront * remaining)
+        }) { rootAnimating = false; dismissing = false; end() }
     }
     fun hide() = deck.hide()
     private fun clear() {
-        finishNow()
-        try { current?.active(false) } catch (error: Exception) { android.util.Log.w("SuperCardNative", "Cannot deactivate card", error) }
-        current = null
+        stopAnimation(); pageDragging = false; edgeDragging = false
+        outsideDown?.recycle(); outsideDown = null; current = null
         try { body.removeAllViews() } finally {
-            if (mounted) {
-                try { windows.removeViewImmediate(root); mounted = false }
-                catch (error: Exception) {
-                    mounted = root.isAttachedToWindow
-                    android.util.Log.w("SuperCardNative", "Cannot detach window", error)
-                }
-            }
+            for (content in cache.values) try { content.dispose() }
+                catch (error: Exception) { android.util.Log.w("SuperCardNative", "Cannot dispose card", error) }
+            cache.clear(); order = emptyList(); scroll = 0f
+            if (mounted) try { windows.removeViewImmediate(root); mounted = false }
+            catch (error: Exception) { mounted = root.isAttachedToWindow; android.util.Log.w("SuperCardNative", "Cannot detach window", error) }
         }
     }
     override fun close() = deck.close()
-    private fun panelWidth() = if (body.width > 0) body.width.toFloat()
-        else minOf(dp(280), context.resources.displayMetrics.widthPixels - dp(24)).coerceAtLeast(1).toFloat()
-    private fun travel() = panelWidth() + dp(12)
-    private fun density() = context.resources.displayMetrics.density
-    private fun dp(value: Int) = (value * density() + .5f).toInt()
+    private fun width() = layout.width.toFloat()
+    private fun travel() = width() + 2 * layout.left
 }
