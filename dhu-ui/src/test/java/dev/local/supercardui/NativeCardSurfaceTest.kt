@@ -49,6 +49,10 @@ class NativeCardSurfaceTest {
             root.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY))
             root.layout(0, 0, w, h)
             assertEquals(h, content.height)
+            assertNull("Stage must never leave a stationary card background", root.background)
+            assertSame(root, content.parent)
+            assertFalse((root as FrameLayout).clipChildren)
+            assertFalse(content.clipChildren)
             System.getenv("SUPERCARD_PREVIEW_DIR")?.let { directory ->
                 val image = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888); root.draw(Canvas(image))
                 val file = File(directory, "native-host-$width-${if (night == Configuration.UI_MODE_NIGHT_YES) "dark" else "light"}-${android.os.Build.VERSION.SDK_INT}.png")

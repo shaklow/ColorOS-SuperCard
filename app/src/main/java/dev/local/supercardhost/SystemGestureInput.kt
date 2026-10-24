@@ -23,10 +23,14 @@ internal class SystemGestureInput(context: Context, private val events: Events) 
     private val receiver: SystemGestureReceiver
     private var tracker: VelocityTracker? = null
     private var decision: GesturePolicy.Decision? = null
+    private var down: GestureDown? = null
     private var startX = 0f
     private var startY = 0f
     private var dragging = false
     private var closed = false
+    private fun trace(message: String) {
+        if (Log.isLoggable("SuperCardNativeInput", Log.DEBUG)) Log.d("SuperCardNativeInput", message)
+    }
     init {
         check(Looper.myLooper() == Looper.getMainLooper())
         org.lsposed.hiddenapibypass.HiddenApiBypass.addHiddenApiExemptions("Landroid/view/", "Landroid/hardware/input/")
@@ -46,17 +50,26 @@ internal class SystemGestureInput(context: Context, private val events: Events) 
     private fun touch(event: MotionEvent): Boolean {
         if (closed) return false
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            val display = event.javaClass.getMethod("getDisplayId").invoke(event) as Int
+            val incoming = GestureDown(event.deviceId, event.source, display, event.getPointerId(0),
+                event.downTime, event.eventTime, event.rawX, event.rawY)
+            if (decision != null && down?.let(incoming::isReplayOf) == true) {
+                trace("Ignored replayed DOWN; preserving edge pull")
+                return dragging
+            }
             cancel()
             if (!events.enabled() || events.visible() || !event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN)) return false
-            if ((event.javaClass.getMethod("getDisplayId").invoke(event) as Int) != 0) return false
+            if (display != 0) return false
             val next = events.policy()
             if (!next.region.contains(event.rawX, event.rawY)) return false
-            decision = next; startX = event.rawX; startY = event.rawY
+            decision = next; down = incoming; startX = event.rawX; startY = event.rawY
             tracker = VelocityTracker.obtain()
         }
         val active = decision ?: return false
         if (!events.enabled() || event.pointerCount != 1 || event.actionMasked == MotionEvent.ACTION_CANCEL) {
-            val claimed = dragging; cancel(); return claimed
+            val claimed = dragging
+            trace("Interrupted: action=${event.actionMasked}, enabled=${events.enabled()}, pointers=${event.pointerCount}, claimed=$claimed")
+            cancel(); return claimed
         }
         tracker?.addMovement(event)
         val distance = startX - event.rawX
@@ -70,7 +83,7 @@ internal class SystemGestureInput(context: Context, private val events: Events) 
                     if (distance <= 0 || y > distance * slope) { cancel(); return false }
                     // Claim once, after intent is known. The app underneath receives CANCEL.
                     monitor.javaClass.getMethod("pilferPointers").invoke(monitor)
-                    dragging = true; events.begin()
+                    dragging = true; trace("Edge pull claimed: locked=${active.screen.locked}"); events.begin()
                 }
                 events.drag(distance.coerceAtLeast(0f))
             }
@@ -80,15 +93,23 @@ internal class SystemGestureInput(context: Context, private val events: Events) 
                     tracker?.computeCurrentVelocity(1000, 20_000 * active.display.density)
                     val velocity = tracker?.xVelocity ?: 0f
                     dragging = false
-                    events.end(CardMotionRules.edgeCommit(distance, velocity, active.screen.locked, active.display.density), velocity)
+                    val commit = CardMotionRules.edgeCommit(distance, velocity, active.screen.locked, active.display.density)
+                    trace("Edge release: distanceDp=${distance / active.display.density}, velocityDp=${velocity / active.display.density}, commit=$commit")
+                    events.end(commit, velocity)
                 }
                 reset(); return claimed
             }
         }
         return dragging
     }
-    fun cancel() { val claimed = dragging; dragging = false; reset(); if (claimed) events.end(false, 0f) }
-    private fun reset() { decision = null; tracker?.recycle(); tracker = null }
+    fun cancel() {
+        val claimed = dragging; dragging = false; reset()
+        if (claimed) {
+            trace("Edge cancelled by caller")
+            events.end(false, 0f)
+        }
+    }
+    private fun reset() { decision = null; down = null; tracker?.recycle(); tracker = null }
     override fun close() {
         if (closed) return
         closed = true

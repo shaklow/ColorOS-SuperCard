@@ -38,6 +38,7 @@ internal class NativeLensCard(context: Context, private val owner: CardWindowOwn
         val previous = camera; camera = null
         try { previous?.close() } finally { if (previous != null) removeView(previous); modes.visibility = View.VISIBLE }
     }
+    fun suspendCamera() = closeCamera()
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         if (lifecycle.attach(context.contentResolver, Settings.Secure.getUriFor("card_setting_data"), Runnable { lifecycle.post(refresh) })) lifecycle.post(refresh)

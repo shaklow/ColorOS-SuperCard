@@ -26,12 +26,26 @@ class CardMotionRulesTest {
             fun edge(distance: Float, velocity: Float, locked: Boolean = false) =
                 CardMotionRules.edgeCommit(distance * density, velocity * density, locked, density)
             assertFalse(edge(120f, 0f)); assertTrue(edge(121f, 0f))
+            assertFalse(edge(40f, 0f))
             assertFalse(edge(150f, 0f, true)); assertTrue(edge(151f, 0f, true))
             assertTrue(edge(20f, -301f)); assertFalse(edge(200f, 301f))
             assertFalse(edge(30f, -300f)); assertFalse(edge(0f, 0f))
         }
         assertFalse(CardMotionRules.edgeCommit(Float.NaN, -1000f, false, 1f))
         assertFalse(CardMotionRules.edgeCommit(200f, 0f, false, 0f))
+    }
+    @Test fun wholeOutgoingCardTravelsPastScreenEdgeAndRearCardHasOriginalPeek() {
+        for (density in listOf(.75f, 1f, 2f, 4f)) {
+            val width = 288 * density; val left = 36 * density
+            val exit = width + left + 10 * density
+            val start = CardMotionRules.pageFrame(0f, width, 1, density, exit)
+            assertEquals(13.6f * density, start.incoming.x - width * (1 - start.incoming.scale) / 2, .001f)
+            val end = CardMotionRules.pageFrame(-width, width, 1, density, exit)
+            assertTrue("Old card clears the physical display", left + end.outgoing.x + width < 0f)
+            assertEquals(1f, end.outgoing.scale, 0f)
+            val reverse = CardMotionRules.pageFrame(0f, width, -1, density, exit)
+            assertTrue("Previous card starts outside the display", left + reverse.incoming.x + width < 0f)
+        }
     }
     @Test fun pageSupportsSlowDragFlingReversalCancellationAndBounds() {
         fun page(x: Float, velocity: Float) = CardMotionRules.pageDelta(x, velocity, 280f, 1f)
