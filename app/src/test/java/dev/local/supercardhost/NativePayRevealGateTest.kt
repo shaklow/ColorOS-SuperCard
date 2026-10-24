@@ -39,6 +39,16 @@ class NativePayRevealGateTest {
         gate.frame(2010)
         assertFalse(gate.reveal(2189)); assertTrue(gate.reveal(2190))
     }
+    @Test fun staticPageDrawnBeforeTheDelayedTaskNotificationDoesNotNeedAnotherBuffer() {
+        val gate = NativePayRevealGate(false)
+        gate.frame(1000)
+        assertNull(gate.remaining(1200))
+        gate.page(1300, true, false)
+        assertFalse(gate.reveal(1949)); assertTrue(gate.reveal(1950))
+        val replacement = NativePayRevealGate(false)
+        replacement.page(2000, true, false)
+        assertFalse("A replacement display cannot inherit the previous QR frame", replacement.reveal(5000))
+    }
     @Test fun schemeLauncherAndUnknownPagesDoNotRevealEarly() {
         val gate = NativePayRevealGate(false)
         gate.page(0, false, true); gate.frame(100)
