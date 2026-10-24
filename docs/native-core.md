@@ -56,6 +56,10 @@ PJZ110 的真实触摸在 `pilferPointers` 并出现新窗口后，会重发原�
 
 真机回归在卡包下方放置实际可点击窗口，点击卡片上方空白后，断言卡包完成叠放收起且下方窗口没有收到 DOWN 或 UP；同时核对全屏输入边界和原版卡片几何。
 
+## 0.2.37：PAY 迁入自研核心
+
+NativePayCard / PayCardSurface 管理快捷入口和支付页，NativePaySession / NativePayBackend 管理安全副屏、触摸、当前任务与释放，复用原启动协议与现有用户路由。仅启用已迁移且已就绪的 PAY、校园卡和 LENS 时自动接手；未迁移卡片或 PAY 功能保留原路由。完整边界见 [自研支付卡](native-pay.md)。
+
 ## 归属与系统边界
 
 - NativeCardDeck 是不依赖 Android 的 Kotlin 内容状态机，负责单一活动卡片、失败回滚、关闭和旧异步结果令牌。

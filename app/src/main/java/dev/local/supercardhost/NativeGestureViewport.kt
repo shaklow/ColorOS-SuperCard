@@ -22,6 +22,7 @@ internal class NativeGestureViewport(context: Context, private val events: Event
         fun inside(x: Int, y: Int): Boolean = true
         fun interrupt(): Boolean = false
         fun content(): View? = null
+        fun protectTexture(): Boolean = true
     }
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
     private var tracker: VelocityTracker? = null
@@ -99,7 +100,7 @@ internal class NativeGestureViewport(context: Context, private val events: Event
     }
     private fun protectedAt(view: View, x: Int, y: Int): Boolean {
         if (!inside(view, x, y)) return false
-        if (view is TextureView) return true
+        if (view is TextureView) return events.protectTexture()
         return view is ViewGroup && (view.childCount - 1 downTo 0).any { protectedAt(view.getChildAt(it), x, y) }
     }
     private fun scrollableAt(view: View, x: Int, y: Int, direction: Int): Boolean {

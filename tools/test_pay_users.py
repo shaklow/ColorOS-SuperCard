@@ -75,6 +75,7 @@ public class PackageManager {public static final java.util.Map<String,Applicatio
 import android.net.Uri;
 public class Intent {
  public static final String ACTION_MAIN="android.intent.action.MAIN";
+ public static final int FLAG_ACTIVITY_NO_ANIMATION=0x10000;
  String action,pkg; ComponentName component; Uri data; public int flags,oplusFlags;
  public java.util.Map<String,Object> extras=new java.util.HashMap<>();
  public Intent(){} public Intent(String a){action=a;}
@@ -83,6 +84,7 @@ public class Intent {
  public Uri getData(){return data;}
  public Intent setPackage(String p){pkg=p;return this;} public Intent setComponent(ComponentName c){component=c;return this;}
  public Intent setData(Uri u){data=u;return this;}
+ public Intent addFlags(int value){flags|=value;return this;}
 }
 """,
     "android.net.Uri": """
@@ -101,8 +103,11 @@ public class Settings {public static class Secure {
 """,
     "android.app.Application": "public class Application extends android.content.Context {}",
     "android.app.ActivityOptions": """
-public class ActivityOptions {int id;public static ActivityOptions makeBasic(){return new ActivityOptions();}
- public void setLaunchDisplayId(int i){id=i;} public android.os.Bundle toBundle(){android.os.Bundle b=new android.os.Bundle();b.putInt("display",id);return b;}}
+public class ActivityOptions {int id=-1;boolean custom;public static ActivityOptions makeBasic(){return new ActivityOptions();}
+ public static ActivityOptions fromBundle(android.os.Bundle b){ActivityOptions a=new ActivityOptions();a.id=b.getInt("display",-1);return a;}
+ public static ActivityOptions makeCustomAnimation(android.content.Context c,int enter,int exit){ActivityOptions a=new ActivityOptions();a.custom=true;return a;}
+ public int getLaunchDisplayId(){return id;} public void setLaunchDisplayId(int i){id=i;}
+ public android.os.Bundle toBundle(){android.os.Bundle b=new android.os.Bundle();b.putInt("display",id);if(custom)b.putInt("animation",0);return b;}}
 """,
     "android.util.Log": "public class Log {public static void i(String t,String m){} public static void w(String t,String m,Throwable e){}}",
     "android.widget.Toast": "public class Toast {public static final int LENGTH_LONG=1;public static Toast makeText(android.content.Context c,String s,int l){return new Toast();} public void show(){}}",

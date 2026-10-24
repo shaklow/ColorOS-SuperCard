@@ -53,6 +53,7 @@ internal class NativeCardHost(private val context: Context, private val type: In
             stopAnimation(); scroll = target; finishPages(); return false
         }
         override fun content() = current?.view
+        override fun protectTexture() = (current?.view as? NativePayCard)?.interactive ?: true
     }).apply {
         clipChildren = false; clipToPadding = false
         addView(surface, FrameLayout.LayoutParams(-1, layout.height, Gravity.BOTTOM).apply { bottomMargin = layout.bottom })
@@ -98,6 +99,12 @@ internal class NativeCardHost(private val context: Context, private val type: In
     private fun create(card: String): Content = cache.getOrPut(card) {
         check(allowed()) { "请先解锁手机" }
         when (card) {
+            "pay" -> object : Content {
+                override val view = NativePayCard(ownerContext, ownerContext)
+                override fun active(value: Boolean) = view.setActive(value)
+                override fun close() { if (current !== this) view.setActive(false) }
+                override fun dispose() = view.close()
+            }
             "dhu" -> object : Content {
                 override val view = DhuPayView(ownerContext, false).apply { setActive(false) }
                 override fun active(value: Boolean) = view.setActive(value)
@@ -210,7 +217,7 @@ internal class NativeCardHost(private val context: Context, private val type: In
         }
         MaterialUiArchive.update(surface, MaterialUiArchive.Operation.RENDER_NATIVE_CARD, Bundle().apply {
             putInt("index", index); putInt("count", count)
-            putString("title", if (card == "camera") "LENS" else "东华校园卡")
+            putString("title", when (card) { "pay" -> "PAY"; "camera" -> "LENS"; else -> "东华校园卡" })
         })
         current = next
     }

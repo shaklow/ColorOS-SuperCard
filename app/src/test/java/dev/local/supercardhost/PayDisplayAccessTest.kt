@@ -62,4 +62,21 @@ class PayDisplayAccessTest {
         assertEquals(1, previous.releases); assertEquals(0, next.releases)
         assertEquals(7, reader.id(state.snapshot))
     }
+    @Test fun nativeOwnerUsesTheSameIdentityChecksWithoutOemReflection() {
+        val state = PaySessionState(); val reader = access(state)
+        var closed = false; var observedTask = -1
+        val owner = object : NativePayDisplayOwner {
+            override val displayId get() = if (closed) -1 else 12
+            override fun resumed(component: ComponentName, task: Int) { observedTask = task }
+            override fun close() { closed = true }
+        }
+        val native = state.begin(owner, "wx_pay", 991)
+        assertEquals(12, reader.id(native))
+        reader.notifyResumed(owner, ComponentName("com.tencent.mm", "Wallet"), 31, true, Runnable {})
+        assertEquals(31, observedTask)
+        state.begin(Manager(), "wx_pay", 0)
+        assertEquals(-1, reader.id(native))
+        reader.release(owner)
+        assertTrue(closed); assertEquals(7, reader.id(state.snapshot))
+    }
 }

@@ -95,6 +95,22 @@ public final class TestPayUsers {
         check(Context.launchUser == 0 && Context.options.getInt("display") == 0, "explicit fullscreen options lost");
         check(Context.options.getInt("animation") == 7 && Context.options != full, "options not preserved/copied");
 
+        Context embedded = PayUserRouting.sdkContext(host, 991, 10);
+        embedded.startActivity(original);
+        check(Context.launchUser == 991 && Context.options.getInt("display") == 10, "native SDK lost clone/display");
+        check(Context.options.getInt("animation", -1) == 0
+                && Context.launched.flags == (original.flags | Intent.FLAG_ACTIVITY_NO_ANIMATION), "native entry still animates");
+        check(original.flags == 0x14000000, "native entry mutated SDK intent");
+        embedded.startActivity(original, full);
+        check(Context.options.getInt("display") == 0 && Context.options.getInt("animation") == 7
+                && Context.launched.flags == original.flags, "native entry suppressed explicit fullscreen animation");
+        PayUserRouting.startEmbedded(host, original, null, "wechat", 991, 0);
+        check(Context.options.getInt("display") == 0 && Context.launched.flags == original.flags, "display 0 entry changed");
+        PayUserRouting.startEmbedded(host, new Intent().setData(Uri.parse("alipays://platformapi/startapp?appId=20000056")),
+                null, "alipay", 998, 10);
+        check(Context.launchUser == 998 && Context.options.getInt("display") == 10
+                && Context.options.getInt("animation", -1) == 0, "native Alipay entry lost quiet user/display routing");
+
         XposedModule module = new XposedModule();
         PayUserRouting.install(module, host, TestPayUsers.class.getClassLoader());
         var sdk = new PayCardSDKLauncher();
