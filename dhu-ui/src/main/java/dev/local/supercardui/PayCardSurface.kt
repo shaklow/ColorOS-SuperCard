@@ -112,7 +112,9 @@ object PayCardSurface {
             cell.addView(icon, LinearLayout.LayoutParams(d.dp(if (tight) 20 else 24), d.dp(if (tight) 20 else 24)))
             val shortLabel = if (label.startsWith("微信分身")) "Ⅱ" + label.removePrefix("微信分身")
                 else label.removePrefix("微信").removePrefix("支付宝")
-            val text = d.text(if (compact) shortLabel else label, if (compact && large) 9 else if (compact) 10 else 12).apply {
+            val brand = if (label.startsWith("微信分身")) "微信Ⅱ" else if (label.startsWith("微信")) "微信" else "支付宝"
+            val idleLabel = brand + "\n" + label.removePrefix("微信分身").removePrefix("微信").removePrefix("支付宝")
+            val text = d.text(if (compact) shortLabel else idleLabel, if (compact && large) 9 else if (compact) 10 else 12).apply {
                 gravity = Gravity.CENTER; maxLines = if (!compact && large) 3 else 2
                 if (compact) { includeFontPadding = false; setLineSpacing(0f, 1f) }
             }
@@ -131,7 +133,7 @@ object PayCardSurface {
                 for (row in 0..1) {
                     val index = column * 2 + row
                     if (index >= types.size) break
-                    group.addView(tile(types[index], labels[index], false), LinearLayout.LayoutParams(-1, d.dp(if (context.resources.configuration.fontScale > 1.3f) 124 else 84)).apply {
+                    group.addView(tile(types[index], labels[index], false), LinearLayout.LayoutParams(-1, d.dp(if (context.resources.configuration.fontScale > 1.3f) 104 else 84)).apply {
                         if (row > 0) topMargin = d.dp(10)
                     })
                 }

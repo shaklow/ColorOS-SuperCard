@@ -26,7 +26,7 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
     private val scope = FloatingCardScope { stage, error -> Log.w("SuperCardNativePay", stage, error) }
     private val surface = MaterialUiArchive.create(context, MaterialUiArchive.Operation.PAY) as View
     private val viewport = requireNotNull(surface.findViewWithTag<FrameLayout>("pay_viewport"))
-    private val texture = TextureView(context).apply { tag = "native_pay_texture" }
+    private var texture: TextureView? = null
     private var choices = emptyList<NativePayConfiguration.Choice>()
     private var selected: String? = null
     private var session: NativePaySession? = null
@@ -36,13 +36,14 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
     private var pageSettled = false
     private var touchEnabled = false
     private var request = 0L
+    private var preparing = false
     private var message: String? = null
     private val refresh = Runnable { stopPayment(); readConfiguration() }
     val interactive get() = frames && pageSettled && session?.interactive(touchEnabled) == true
     init {
         addView(surface, LayoutParams(-1, -1))
-        viewport.addView(texture, LayoutParams(-1, -1))
         MaterialUiArchive.update(surface, MaterialUiArchive.Operation.BIND_PAY, Consumer<Bundle> { event ->
+            if (!active) return@Consumer
             when (event.getString("action")) {
                 "function" -> event.getString("function")?.let(::choose)
                 "back" -> stopPayment()
@@ -54,24 +55,33 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
                 }
             }
         })
-        texture.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-            override fun onSurfaceTextureAvailable(value: SurfaceTexture, width: Int, height: Int) = prepare()
+        readConfiguration()
+    }
+    private fun createTexture() {
+        val target = TextureView(context).apply { tag = "native_pay_texture" }
+        texture = target
+        target.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+            override fun onSurfaceTextureAvailable(value: SurfaceTexture, width: Int, height: Int) { if (texture === target) prepare() }
             override fun onSurfaceTextureSizeChanged(value: SurfaceTexture, width: Int, height: Int) = Unit
-            override fun onSurfaceTextureDestroyed(value: SurfaceTexture): Boolean { stopPayment(); return true }
+            override fun onSurfaceTextureDestroyed(value: SurfaceTexture): Boolean {
+                if (texture === target) main.post { if (texture === target) stopPayment() }
+                return true
+            }
             override fun onSurfaceTextureUpdated(value: SurfaceTexture) {
-                if (session != null && !frames) { frames = true; render() }
+                if (texture === target && session != null && !frames) { frames = true; render() }
             }
         }
-        texture.setOnClickListener { if (!interactive) fullscreen() }
-        texture.setOnTouchListener { view, event ->
-            if (!interactive) false else try {
+        target.setOnClickListener { if (texture === target && !interactive) fullscreen() }
+        target.setOnTouchListener { view, event ->
+            if (texture !== target || !interactive) false else try {
                 val handled = session?.touch(event, view.width, view.height, touchEnabled) == true
                 if (handled) view.parent?.requestDisallowInterceptTouchEvent(
                     event.actionMasked != MotionEvent.ACTION_UP && event.actionMasked != MotionEvent.ACTION_CANCEL)
                 handled
             } catch (error: Exception) { fail(error); true }
         }
-        readConfiguration()
+        viewport.addView(target, LayoutParams(-1, -1))
+        prepare()
     }
     private fun readConfiguration() {
         try {
@@ -108,16 +118,18 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
         stopPayment(false)
         selected = function; message = null; frames = false
         touchEnabled = PayTouchSettings.enabled(context, function)
-        render(); prepare()
+        render(); createTexture()
     }
     private fun prepare() {
-        if (!active || selected == null || session != null || output != null || !texture.isAvailable || !isAttachedToWindow) return
+        val target = texture ?: return
+        if (!active || selected == null || session != null || output != null || preparing || !target.isAvailable || !isAttachedToWindow) return
+        preparing = true
         val function = selected!!
         val ticket = request
         val deadline = SystemClock.elapsedRealtime() + 10_000
         val ready = object : Runnable {
             override fun run() {
-                if (ticket != request || !active || selected != function || !isAttachedToWindow) return
+                if (ticket != request || texture !== target || !active || selected != function || !isAttachedToWindow) return
                 try {
                     check(context.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked != true) { "请先解锁手机" }
                     check(NativePayLauncher.ready) { "支付服务尚未连接，请重新载入卡包" }
@@ -128,9 +140,9 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
                     val user = PayUserSettings.resolve(context, function)
                     val metrics = DisplayMetrics()
                     context.getSystemService(android.view.WindowManager::class.java).defaultDisplay.getRealMetrics(metrics)
-                    val size = NativePayGeometry.measure(texture.width, texture.height, metrics.widthPixels, metrics.densityDpi,
+                    val size = NativePayGeometry.measure(target.width, target.height, metrics.widthPixels, metrics.densityDpi,
                         NativePayLauncher.enlarged(context, function))
-                    val buffer = checkNotNull(texture.surfaceTexture)
+                    val buffer = checkNotNull(target.surfaceTexture)
                     buffer.setDefaultBufferSize(size.width, size.height)
                     output = Surface(buffer)
                     lateinit var next: NativePaySession
@@ -150,12 +162,12 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
                         override fun fullscreen(delay: Long) { main.postDelayed({ if (session === next) this@NativePayCard.fullscreen() }, delay) }
                         override fun closed() {
                             if (session === next) {
-                                session = null; output?.release(); output = null; selected = null
-                                main.removeCallbacksAndMessages(null); render()
+                                session = null; stopPayment()
                             }
                         }
                     })
                     session = next
+                    preparing = false
                     next.start(checkNotNull(output), size)
                     main.postDelayed(object : Runnable {
                         override fun run() {
@@ -188,11 +200,22 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
     private fun stopPayment(reset: Boolean = true) {
         request++; main.removeCallbacksAndMessages(null)
         val old = session; session = null
+        val oldTexture = texture; texture = null; preparing = false
         try { old?.close() }
         catch (error: Exception) { Log.w("SuperCardNativePay", "Release payment display", error) }
-        finally { output?.release(); output = null; frames = false; pageSettled = false; if (reset) { selected = null; render() } }
+        finally {
+            output?.release(); output = null
+            if (oldTexture?.parent === viewport) viewport.removeView(oldTexture)
+            frames = false; pageSettled = false
+            if (reset) { selected = null; render() }
+        }
     }
-    fun setActive(value: Boolean) { active = value; if (!value) stopPayment() }
+    fun setActive(value: Boolean) {
+        if (active == value) return
+        active = value
+        if (!value) stopPayment(false)
+        else if (selected != null && texture == null) { render(); createTexture() }
+    }
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         val keys = listOf("card_setting_data", "supercard_pay_user_wechat", "supercard_pay_user_alipay") +
