@@ -200,7 +200,8 @@ public final class SettingsStartupTest extends Instrumentation {
         // Keep secure-output checks on this test UID; delegate only the existing display/input needs.
         getUiAutomation().adoptShellPermissionIdentity("android.permission.ADD_TRUSTED_DISPLAY",
                 "android.permission.INJECT_EVENTS", "android.permission.START_ACTIVITIES_FROM_BACKGROUND",
-                "android.permission.MANAGE_ACTIVITY_TASKS", "android.permission.REAL_GET_TASKS");
+                "android.permission.MANAGE_ACTIVITY_TASKS", "android.permission.REAL_GET_TASKS",
+                "android.permission.INTERNAL_SYSTEM_WINDOW");
         int securePermissionBefore = target.checkSelfPermission("android.permission.CAPTURE_SECURE_VIDEO_OUTPUT");
         boolean securePermissionOverridden = false;
         try {
