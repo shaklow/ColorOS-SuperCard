@@ -63,6 +63,7 @@ internal class NativeCardHost(private val context: Context, private val type: In
     private val bodyOrigin = IntArray(2)
     private var outsideDown: MotionEvent? = null
     private var mounted = false
+    private var couponSession = false
     private var current: Content? = null
     private val cache = linkedMapOf<String, Content>()
     private var order = emptyList<String>()
@@ -101,6 +102,12 @@ internal class NativeCardHost(private val context: Context, private val type: In
         when (card) {
             "pay" -> object : Content {
                 override val view = NativePayCard(ownerContext, ownerContext)
+                override fun active(value: Boolean) = view.setActive(value)
+                override fun close() { if (current !== this) view.setActive(false) }
+                override fun dispose() = view.close()
+            }
+            "staging" -> object : Content {
+                override val view = NativeCouponCard(ownerContext, ownerContext)
                 override fun active(value: Boolean) = view.setActive(value)
                 override fun close() { if (current !== this) view.setActive(false) }
                 override fun dispose() = view.close()
@@ -215,9 +222,14 @@ internal class NativeCardHost(private val context: Context, private val type: In
             })
             mounted = true
         }
+        if (!couponSession && "staging" in order) {
+            couponSession = true
+            try { CouponRefreshCoordinator.onNativeCardPackShown(context.applicationContext as android.app.Application, this) }
+            catch (error: Exception) { couponSession = false; CouponRefreshCoordinator.onNativeCardPackHidden(this); throw error }
+        }
         MaterialUiArchive.update(surface, MaterialUiArchive.Operation.RENDER_NATIVE_CARD, Bundle().apply {
             putInt("index", index); putInt("count", count)
-            putString("title", when (card) { "pay" -> "PAY"; "camera" -> "LENS"; else -> "东华校园卡" })
+            putString("title", when (card) { "pay" -> "PAY"; "staging" -> "卡券"; "camera" -> "LENS"; else -> "东华校园卡" })
         })
         current = next
     }
@@ -358,6 +370,7 @@ internal class NativeCardHost(private val context: Context, private val type: In
         stopAnimation(); pageDragging = false; edgeDragging = false
         outsideDown?.recycle(); outsideDown = null; current = null
         try { body.removeAllViews() } finally {
+            if (couponSession) { couponSession = false; CouponRefreshCoordinator.onNativeCardPackHidden(this) }
             for (content in cache.values) try { content.dispose() }
                 catch (error: Exception) { android.util.Log.w("SuperCardNative", "Cannot dispose card", error) }
             cache.clear(); order = emptyList(); scroll = 0f

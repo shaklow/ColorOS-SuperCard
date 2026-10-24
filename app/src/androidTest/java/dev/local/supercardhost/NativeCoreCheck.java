@@ -307,16 +307,20 @@ final class NativeCoreCheck implements AutoCloseable {
         await(() -> !host.getShowing(), "Outward swipe on the first card did not dismiss");
         assertEmpty();
         // Leave a fully laid-out actual native container for the secure secondary-display test.
-        main(() -> host.show(List.of("pay", "dhu", "camera"), "pay"));
+        main(() -> host.show(List.of("pay", "staging", "dhu", "camera"), "pay"));
         awaitSettled("pay");
         main(() -> {
-            if (!(front() instanceof NativePayCard) || body.getChildCount() != 3
+            if (!(front() instanceof NativePayCard) || body.getChildCount() != 4
                     || front().findViewWithTag("pay_settings") == null || front().findViewWithTag("pay_viewport") == null)
                 throw new AssertionError("Native PAY is missing from the live mixed deck");
         });
+        swipe(235, 250, 35, 250, 7, 40); awaitSettled("staging");
+        main(() -> { if (!(front() instanceof NativeCouponCard) || front().findViewWithTag("coupon_settings") == null)
+            throw new AssertionError("Native coupons are missing from the mixed deck"); });
         swipe(235, 250, 35, 250, 7, 40); awaitSettled("dhu");
         swipe(235, 250, 35, 250, 7, 40); awaitSettled("camera");
         swipe(45, 250, 235, 250, 7, 40); awaitSettled("dhu");
+        swipe(45, 250, 235, 250, 7, 40); awaitSettled("staging");
         swipe(45, 250, 235, 250, 7, 40); awaitSettled("pay");
         main(() -> host.hide()); assertEmpty();
         android.util.Log.i("SuperCardNativeTest", "Native PAY mixed-deck body swipes and cleanup passed");

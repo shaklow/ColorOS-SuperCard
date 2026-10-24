@@ -1,6 +1,6 @@
 # ColorOS 超级卡包
 
-0.2.37 将 PAY 支付卡接入自研卡包：独立 Kotlin 界面与安全副屏会话，保留微信、支付宝启动协议、分身设置和功能顺序；支持卡内切换、全屏接续、认证与扫码结果处理，切走或关闭时释放资源。迁移边界与验证范围见 [自研支付卡](docs/native-pay.md)。
+0.2.39 将卡券接入自研卡包，保留钱包取券与补码、账号校验、原券顺序、卡内详情、钱包查看和本地移除。列表复用可见项，二维码后台准备，切走或失效时清理。PAY 的原版节奏过渡与 M3E 加载组件继续保留。仅启用 PAY、卡券、校园卡和 LENS 时可由自研核心接手；记忆等未迁移配置保留原完整卡包。实现及验证边界见[自研卡券](docs/native-coupon.md)与[自研支付卡](docs/native-pay.md)。
 
 0.2.36 让卡包以全屏透明触摸窗口接收空白处点击，收起时不会穿透打开桌面图标；卡片仍为原版的 288×466dp、水平居中、距底部 36dp。0.2.35 已修复 ColorOS 补发 DOWN 导致真实手指唤出被取消，并接入原版独立收起曲线与回到首卡的叠放过程。连续切卡沿用原版 QuickSwitch 和 StackPageTransformer 规则。
 
@@ -93,7 +93,7 @@ python tools/rebuild_assets.py
 
 Actions 产物包含统一 APK、SHA256 和核对报告，不再构建或上传 Magisk/KernelSU 后端模块 ZIP。
 
-本仓库签名密钥保存在 `release` Environment secret `SUPERCARD_KEYSTORE_BASE64` 中，值为 keystore 文件的完整 Base64 内容；密钥文件不提交到 Git。当前密钥别名为 `androiddebugkey`，库密码与私钥密码均为 `android`，与服务器构建保持一致。本仓库签名与上游官方签名不同，不能直接覆盖上游官方安装包。
+本仓库签名配置由 `release` Environment 注入，密钥文件和密码不提交到 Git。本仓库签名与上游官方签名不同，不能直接覆盖上游官方安装包。
 
 修改源码后，应先完成本地验证，再更新 `ci/reference-apk.json`。Actions 通过后下载其产物，与同一提交的本地产物再次核对，再发布 Release。构建成功不能替代真机功能验证。
 

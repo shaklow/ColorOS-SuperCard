@@ -58,6 +58,7 @@ def main():
                 or 'Gesture settings: session, preview ownership and new page passed' not in result.stdout \
                 or 'Native core: secure window, switching and lock cleanup passed' not in result.stdout \
                 or 'Native PAY: mixed deck, secure session touch and cleanup passed' not in result.stdout \
+                or 'Native coupons: secure detail, wallet updates, local removal and cleanup passed' not in result.stdout \
                 or (args.secure_native and ('Secure native display: actual secure secondary display and touch passed' not in result.stdout
                     or 'Native gestures: monitored edge pull, swipe, cancellation and animations passed' not in result.stdout)):
             raise SystemExit('Settings startup failed; inspect the instrumentation output and device crash log.')
