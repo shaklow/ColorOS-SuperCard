@@ -1,6 +1,7 @@
 package dev.local.supercardui
 
 import android.content.res.Configuration
+import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Rect
@@ -15,10 +16,13 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Robolectric
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
 import java.util.function.Consumer
+import java.time.Duration
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31, 36])
@@ -55,15 +59,19 @@ class PayCardSurfaceTest {
     @Test @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun shortcutsGatherIntoTabsAndCancellationCannotReopenThePage() {
         val root = PayCardSurface.create(RuntimeEnvironment.getApplication()) as ViewGroup
-        PayCardSurface.render(root, selection())
+        PayCardSurface.render(root, selection().apply { putString("selected", "wx_pay"); putBoolean("loading", true) })
         val idle = root.findViewWithTag<ViewGroup>("pay_idle")
+        idle.visibility = View.VISIBLE
         val opened = root.findViewWithTag<View>("pay_opened").apply { visibility = View.VISIBLE }
         root.measure(exact(576), exact(932)); root.layout(0, 0, 576, 932)
         val source = root.findViewWithTag<View>("pay_function_wx_pay")
         val target = root.findViewWithTag<View>("pay_tab_wx_pay")
         val scroll = source.parent.parent.parent as View
         val motion = PayCardMotion(root, idle, opened, scroll)
-        val opening = motion.start(true, listOf(source to target))
+        val pairs = selection().getStringArray("types")!!.map { type ->
+            root.findViewWithTag<View>("pay_function_$type") to root.findViewWithTag<View>("pay_tab_$type")
+        }
+        val opening = motion.start(true, pairs)
         opening.currentPlayTime = 175
         assertTrue(source.translationY > 0f)
         assertTrue(opened.alpha > 0f && opened.alpha < 1f)
@@ -82,13 +90,20 @@ class PayCardSurfaceTest {
         assertEquals(View.VISIBLE, idle.visibility)
         assertEquals(View.INVISIBLE, opened.visibility)
         assertEquals(1f, idle.alpha)
+        PayCardSurface.render(root, selection())
         PayCardSurface.render(root, selection().apply { putString("selected", "wx_pay"); putBoolean("loading", true) })
-        root.measure(exact(576), exact(932)); root.layout(0, 0, 576, 932)
-        val indicator = root.findViewWithTag<View>("pay_loading_indicator")
-        val mask = root.findViewWithTag<ViewGroup>("pay_loading")
-        assertEquals(mask.width / 2, indicator.left + indicator.width / 2)
-        assertEquals(mask.height / 2, indicator.top + indicator.height / 2)
-        preview(root, "native-pay-loading-${android.os.Build.VERSION.SDK_INT}")
+        val activity = Robolectric.buildActivity(Activity::class.java).setup()
+        try {
+            activity.get().setContentView(root)
+            shadowOf(android.os.Looper.getMainLooper()).idleFor(Duration.ofMillis(32))
+            root.measure(exact(576), exact(932)); root.layout(0, 0, 576, 932)
+            val indicator = root.findViewWithTag<LoadingIndicator>("pay_loading_indicator")
+            val mask = root.findViewWithTag<ViewGroup>("pay_loading")
+            assertTrue("M3E drawable must start when the loading page is attached", indicator.drawable.isVisible)
+            assertEquals(mask.width / 2, indicator.left + indicator.width / 2)
+            assertEquals(mask.height / 2, indicator.top + indicator.height / 2)
+            preview(root, "native-pay-loading-${android.os.Build.VERSION.SDK_INT}")
+        } finally { activity.pause().stop().destroy() }
     }
     @Test @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun originalViewportSettingsAndLabelsFitBothThemesAndLargerText() {
