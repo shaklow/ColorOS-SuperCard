@@ -23,6 +23,7 @@ internal class PayDisplayAccess(
         val manager = session.manager ?: return -1
         if (!sessions.isCurrent(session)) return -1
         return try {
+            if (manager is NativePayDisplayOwner) return manager.displayId.takeIf { it > 0 && sessions.isCurrent(session) } ?: -1
             if (active.invoke(manager) != true) return -1
             val id = (display.invoke(manager) as Number).toInt()
             if (id > 0 && sessions.isCurrent(session)) id else -1
@@ -30,6 +31,11 @@ internal class PayDisplayAccess(
     }
 
     fun notifyResumed(manager: Any, component: ComponentName, taskId: Int, changed: Boolean, notified: Runnable) {
+        if (manager is NativePayDisplayOwner) {
+            manager.resumed(component, taskId)
+            if (changed) notified.run()
+            return
+        }
         if (changed) {
             try { resumed.invoke(manager, component); notified.run() }
             finally { correctTask(manager, taskId) }
@@ -41,7 +47,7 @@ internal class PayDisplayAccess(
     }
 
     fun release(manager: Any) {
-        try { release.invoke(manager) }
+        try { if (manager is NativePayDisplayOwner) manager.close() else release.invoke(manager) }
         catch (error: Exception) { failure.accept("release previous PAY user", error) }
     }
 

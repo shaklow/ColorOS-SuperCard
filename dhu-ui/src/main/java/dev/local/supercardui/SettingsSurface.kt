@@ -115,7 +115,7 @@ object SettingsSurface {
             hero.addView(text("启用卡片，调整显示顺序", 14, secondary = true).space(top = 6))
             hero.addView(button("唤出悬浮卡片", "show_cards").space(top = 18))
             hero.addView(button("管理卡片", "open_cards", textOnly = true).space(top = 6))
-            hero.addView(button("新卡包预览：校园卡与 LENS", "native_cards", textOnly = true).space(top = 6))
+            hero.addView(button("新卡包预览：PAY、校园卡与 LENS", "native_cards", textOnly = true).space(top = 6))
             add(card(hero, com.google.android.material.R.attr.colorPrimaryContainer), bottom = 28)
             section("连接与授权")
             navigation("运行状态与 PAY", "检查系统连接、启动用户与触摸设置", R.drawable.settings_ic_status, "open_runtime")

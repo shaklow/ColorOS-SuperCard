@@ -65,7 +65,7 @@ public final class SettingsStartupTest extends Instrumentation {
                 android.util.Log.i("SuperCardNativeTest", "Native regression passed; starting secure Lens display check");
                 checkLensDisplay(nativeCore.container());
             }
-            result.putString("stream", "Settings startup: 4 entry points passed\nCard management: persistence, ordering and legacy entry passed\nGesture settings: session, preview ownership and new page passed\nFloating cards: window embedding passed\nFloating lifecycle: detach/reattach passed\nLens display: embedded activity and touch passed\nRoot display: callback wrapper passed\nNative core: secure window, switching and lock cleanup passed\n"
+            result.putString("stream", "Settings startup: 4 entry points passed\nCard management: persistence, ordering and legacy entry passed\nGesture settings: session, preview ownership and new page passed\nFloating cards: window embedding passed\nFloating lifecycle: detach/reattach passed\nLens display: embedded activity and touch passed\nRoot display: callback wrapper passed\nNative core: secure window, switching and lock cleanup passed\nNative PAY: mixed deck, secure session touch and cleanup passed\n"
                     + (secureNative ? "Secure native display: actual secure secondary display and touch passed\nNative gestures: monitored edge pull, swipe, cancellation and animations passed\n" : ""));
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
@@ -199,7 +199,8 @@ public final class SettingsStartupTest extends Instrumentation {
         // Full shell adoption takes precedence over per-UID permission overrides.
         // Keep secure-output checks on this test UID; delegate only the existing display/input needs.
         getUiAutomation().adoptShellPermissionIdentity("android.permission.ADD_TRUSTED_DISPLAY",
-                "android.permission.INJECT_EVENTS", "android.permission.START_ACTIVITIES_FROM_BACKGROUND");
+                "android.permission.INJECT_EVENTS", "android.permission.START_ACTIVITIES_FROM_BACKGROUND",
+                "android.permission.MANAGE_ACTIVITY_TASKS", "android.permission.REAL_GET_TASKS");
         int securePermissionBefore = target.checkSelfPermission("android.permission.CAPTURE_SECURE_VIDEO_OUTPUT");
         boolean securePermissionOverridden = false;
         try {
@@ -277,6 +278,7 @@ public final class SettingsStartupTest extends Instrumentation {
             }
             if (!clicked.await(5, TimeUnit.SECONDS) || clicks.get() != 1)
                 throw new AssertionError("Lens touch did not reach the embedded activity: " + clicks.get());
+            checkNativePaySession(target, output.get(), display.get(), current, control.get(), location);
         } finally {
             try {
                 if (activity != null) { Activity current = activity; main(current::finish); }
@@ -299,6 +301,96 @@ public final class SettingsStartupTest extends Instrumentation {
                 } finally { removeMonitor(monitor); getUiAutomation().dropShellPermissionIdentity(); }
             }
         }
+    }
+
+    /** A test Activity supplies controls; no real payment app or payment action is invoked. */
+    private void checkNativePaySession(Context target, Surface surface, VirtualDisplay display,
+            Activity activity, View control, int[] point) throws Exception {
+        int id = display.getDisplay().getDisplayId();
+        NativePayBackend input = new NativePayBackend(target);
+        AtomicReference<NativePayDisplayOwner> owner = new AtomicReference<>();
+        AtomicInteger releases = new AtomicInteger(), clicks = new AtomicInteger(), promoted = new AtomicInteger();
+        int task = activity.getTaskId();
+        java.util.List<Integer> actions = new java.util.ArrayList<>();
+        CountDownLatch clicked = new CountDownLatch(1);
+        main(() -> control.setOnClickListener(v -> { clicks.incrementAndGet(); clicked.countDown(); }));
+        NativePaySession session = new NativePaySession(new NativePaySession.Backend() {
+            @Override public LensCameraSession.Display create(Surface output, NativePayGeometry.Size size) {
+                if (size.getWidth() != 600 || size.getHeight() != 900 || size.getDensity() != 240)
+                    throw new AssertionError("PAY session changed its rendering geometry");
+                return new LensCameraSession.Display() {
+                    @Override public int getId() { return id; }
+                    @Override public void close() { releases.incrementAndGet(); display.release(); }
+                };
+            }
+            @Override public void bind(NativePayDisplayOwner value, String function, int user) {
+                if (!"wx_pay".equals(function) || user != 0) throw new AssertionError("PAY launch identity changed");
+                owner.set(value);
+            }
+            @Override public void unbind(NativePayDisplayOwner value) { owner.compareAndSet(value, null); }
+            @Override public void launch(String function, int user, int displayId) {
+                if (displayId != id || activity.getDisplay().getDisplayId() != id || owner.get() == null)
+                    throw new AssertionError("PAY session escaped its actual secondary display");
+            }
+            @Override public void retry(String function, int user, int displayId) { throw new AssertionError("Unexpected PAY scheme retry"); }
+            @Override public boolean inject(MotionEvent event, int displayId) {
+                actions.add(event.getActionMasked()); return input.inject(event, displayId);
+            }
+            @Override public void promote(int taskId, int displayId, int user) {
+                if (taskId != task) throw new AssertionError("PAY promoted a different task");
+                input.promote(taskId, displayId, user); promoted.incrementAndGet();
+            }
+        }, "wx_pay", 0, new NativePaySession.Events() {
+            @Override public void changed() { }
+            @Override public void fullscreen(long delay) { throw new AssertionError("Test page requested fullscreen"); }
+            @Override public void closed() { }
+        });
+        try {
+            session.start(surface, new NativePayGeometry.Size(600, 900, 240));
+            // The task observer's financial-page projection is deterministic in this harness.
+            session.resumed(new android.content.ComponentName("com.tencent.mm",
+                    "com.tencent.mm.plugin.offline.ui.WalletOfflineCoinPurseUI"), task);
+            long down = SystemClock.uptimeMillis();
+            MotionEvent blocked = MotionEvent.obtain(down, down, MotionEvent.ACTION_DOWN, point[0] / 2f, point[1] / 2f, 0);
+            try {
+                if (session.touch(blocked, 300, 450, false) || !actions.isEmpty())
+                    throw new AssertionError("Default PAY page protection allowed embedded input");
+            } finally { blocked.recycle(); }
+            for (int action : new int[]{MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP}) {
+                MotionEvent event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, point[0] / 2f, point[1] / 2f, 0);
+                try { if (!session.touch(event, 300, 450, true)) throw new AssertionError("Opted-in PAY touch rejected"); }
+                finally { event.recycle(); }
+            }
+            if (!clicked.await(5, TimeUnit.SECONDS) || clicks.get() != 1)
+                throw new AssertionError("PAY scaled touch did not reach the actual embedded control");
+            MotionEvent unfinished = MotionEvent.obtain(down + 1, SystemClock.uptimeMillis(), MotionEvent.ACTION_DOWN,
+                    point[0] / 2f, point[1] / 2f, 0);
+            try { session.touch(unfinished, 300, 450, true); } finally { unfinished.recycle(); }
+            session.fullscreen(); session.close();
+            if (owner.get() != null || releases.get() != 1 || promoted.get() != 1 || session.getDisplayId() != -1
+                    || !actions.equals(java.util.List.of(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP,
+                        MotionEvent.ACTION_DOWN, MotionEvent.ACTION_CANCEL)))
+                throw new AssertionError("PAY session did not cancel input and release its owned display exactly once");
+            long deadline = SystemClock.uptimeMillis() + 5000;
+            while (target.getSystemService(DisplayManager.class).getDisplay(id) != null && SystemClock.uptimeMillis() < deadline)
+                SystemClock.sleep(50);
+            if (target.getSystemService(DisplayManager.class).getDisplay(id) != null)
+                throw new AssertionError("PAY session leaked the real secondary display");
+            deadline = SystemClock.uptimeMillis() + 5000;
+            while (payTaskDisplay(target, task) != 0 && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(50);
+            if (payTaskDisplay(target, task) != 0) throw new AssertionError("PAY fullscreen did not preserve its actual task on display 0");
+            android.util.Log.i("SuperCardNativeTest", "Native PAY secure session: protected/opt-in scaled touch, CANCEL, fullscreen task and actual display release passed");
+        } finally {
+            session.close();
+            // Moving between densities can recreate the test Activity; remove only its own test task.
+            for (android.app.ActivityManager.AppTask candidate : target.getSystemService(android.app.ActivityManager.class).getAppTasks())
+                if (candidate.getTaskInfo().taskId == task) candidate.finishAndRemoveTask();
+        }
+    }
+    private int payTaskDisplay(Context target, int task) throws Exception {
+        for (android.app.ActivityManager.RunningTaskInfo current : target.getSystemService(android.app.ActivityManager.class).getRunningTasks(30))
+            if (current.taskId == task) return current.getClass().getField("displayId").getInt(current);
+        return -1;
     }
 
     /** Exercise the production hidden-framework adapter with a real display callback. */

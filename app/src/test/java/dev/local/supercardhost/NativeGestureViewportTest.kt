@@ -18,6 +18,7 @@ class NativeGestureViewportTest {
     private class Events : NativeGestureViewport.Events {
         var busy = false; var starts = 0
         var interrupt = false; var content: View? = null
+        var protect = true
         val ends = mutableListOf<Boolean>(); val queued = mutableListOf<Int>()
         override fun busy() = busy
         override fun begin(): Boolean { starts++; return true }
@@ -26,6 +27,7 @@ class NativeGestureViewportTest {
         override fun queue(delta: Int) { queued.add(delta) }
         override fun interrupt() = interrupt
         override fun content() = content
+        override fun protectTexture() = protect
     }
     private fun scenario(texture: Boolean = false, busy: Boolean = false, test: (NativeGestureViewport, Events, MutableList<Int>) -> Unit) {
         val controller = Robolectric.buildActivity(Activity::class.java).setup()
@@ -64,6 +66,15 @@ class NativeGestureViewportTest {
         send(root, MotionEvent.ACTION_UP, 30f, 210f, 300)
         assertEquals(listOf(false), events.ends)
         assertTrue(events.queued.isEmpty()); assertTrue(actions.isEmpty())
+    }
+    @Test fun protectedPaymentPreviewStillAllowsCardBodySwiping() = scenario(texture = true) { root, events, actions ->
+        events.protect = false
+        send(root, MotionEvent.ACTION_DOWN, 230f, 210f, 100)
+        send(root, MotionEvent.ACTION_MOVE, 30f, 210f, 200)
+        send(root, MotionEvent.ACTION_UP, 30f, 210f, 300)
+        assertEquals(1, events.starts)
+        assertEquals(1, actions.count { it == MotionEvent.ACTION_CANCEL })
+        assertFalse(actions.contains(MotionEvent.ACTION_UP))
     }
     @Test fun textureInAnInactiveRearCardDoesNotBlockTheActualFrontCard() = scenario { root, events, _ ->
         events.content = root.getChildAt(0)

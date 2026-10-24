@@ -131,6 +131,10 @@ final class PayUserRouting {
         return routed.toBundle();
     }
 
+    static Context sdkContext(Context host, int user, int display) throws ReflectiveOperationException {
+        return new UserContext(host, host, user, display);
+    }
+
     static void start(Context host, Intent source, Bundle options, String app, int user, int display)
             throws ReflectiveOperationException {
         String pkg = PayUserSettings.packageName(app);

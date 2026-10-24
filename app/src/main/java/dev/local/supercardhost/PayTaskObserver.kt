@@ -104,6 +104,7 @@ internal class PayTaskObserver(
             } catch (error: Throwable) { failure.accept("notify payment resume", error) }
         }
         if (selected.display != lastPluginDisplay || component != lastPluginComponent) {
+            if (!sessions.isCurrent(session)) return
             if (selected.display == 0) GestureHandle.onTopActivityChanged()
             try {
                 topActivity.invoke(plugin, component.className, component.packageName)
@@ -132,5 +133,6 @@ internal class PayTaskObserver(
 
     private fun taskDisplay(task: ActivityManager.RunningTaskInfo): Int = task.javaClass.getField("displayId").getInt(task)
     private fun isPaymentPackage(name: String): Boolean = name == "com.tencent.mm" ||
-        name == "com.eg.android.AlipayGphone" || PayDiagnostics.isTestPackage(name)
+        name == "com.eg.android.AlipayGphone" || name == "com.android.permissioncontroller" ||
+        name == "com.google.android.permissioncontroller" || name == "com.android.packageinstaller" || PayDiagnostics.isTestPackage(name)
 }

@@ -40,6 +40,8 @@ public final class PayRuntimeBridge {
             observer = prepared;
             PayUserRouting.install(module, host, pluginLoader);
             PayDisplayReadiness.install(module, host, pluginLoader);
+            try { NativePayLauncher.install(host, pluginLoader); }
+            catch (Throwable error) { failure("install native payment protocol", error); }
 
             Method launch = managerType.getDeclaredMethod("launchPayment", String.class, int[].class, Intent.class);
             launch.setAccessible(true);
@@ -111,6 +113,23 @@ public final class PayRuntimeBridge {
 
     public static int getActiveDisplayId() {
         return displayId(SESSION.getSnapshot());
+    }
+
+    static void prepareNative() {
+        PaySessionState.Snapshot old = SESSION.getSnapshot();
+        if (!SESSION.clear(old)) return;
+        if (touchPolicy != null) touchPolicy.observe(null);
+        if (old.getManager() != null && displayAccess != null) displayAccess.release(old.getManager());
+    }
+
+    static void beginNative(NativePayDisplayOwner owner, String function, int user) {
+        SESSION.begin(owner, function, user);
+        if (touchPolicy != null) touchPolicy.observe(null);
+    }
+
+    static void endNative(NativePayDisplayOwner owner) {
+        PaySessionState.Snapshot current = SESSION.getSnapshot();
+        if (current.getManager() == owner && SESSION.clear(current) && touchPolicy != null) touchPolicy.observe(null);
     }
 
     private static int displayId(PaySessionState.Snapshot session) {
