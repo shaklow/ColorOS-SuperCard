@@ -197,7 +197,10 @@ jobs:
           profile: pixel_7_pro
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-          script: python tools/test_settings_startup.py --secure-native --install-from smoke --logcat-out smoke/logcat.txt
+          script: |
+            adb shell wm size 720x1560
+            adb shell wm density 280
+            python tools/test_settings_startup.py --secure-native --timeout 360 --install-from smoke --logcat-out smoke/logcat.txt
       - name: 保存设备启动日志
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

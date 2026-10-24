@@ -279,6 +279,7 @@ final class NativeCoreCheck implements AutoCloseable {
         inject(afterDismiss, MotionEvent.ACTION_UP, blank[0], blank[1]);
         await(() -> underlayDowns.get() == downsBefore + 1 && underlayUps.get() == upsBefore + 1,
                 "Underlying control did not become clickable after dismissal");
+        android.util.Log.i("SuperCardNativeTest", "Blank dismissal consumed DOWN/UP; underlying control restored after close");
         main(() -> host.show(List.of("dhu", "camera"), "dhu"));
         awaitSettled("dhu");
         // Commands can also reverse immediately, without waiting for the former target.
