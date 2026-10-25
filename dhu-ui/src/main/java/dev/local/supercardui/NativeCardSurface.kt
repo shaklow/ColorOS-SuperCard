@@ -6,11 +6,9 @@ import android.view.View
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.FrameLayout
 import androidx.appcompat.view.ContextThemeWrapper
-import com.google.android.material.card.MaterialCardView
-import com.google.android.material.color.MaterialColors
 import java.util.function.Consumer
 
-/** Original-size card surface. Swipes belong to the host; accessibility retains page actions. */
+/** Transparent stage: each live card owns its background, outline and movement. */
 object NativeCardSurface {
     @JvmStatic fun create(context: Context): View = Page(ContextThemeWrapper(context, R.style.Theme_DhuUi)).root
     @JvmStatic fun bind(root: View, action: Consumer<Bundle>) { (root.tag as Page).action = action }
@@ -21,12 +19,9 @@ object NativeCardSurface {
         private var count = 0
         val root = FrameLayout(context).apply {
             tag = this@Page; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-            addView(MaterialCardView(context).apply {
-                radius = context.resources.getDimension(R.dimen.card_surface_corner)
-                strokeWidth = 0; cardElevation = 0f
-                clipToOutline = true
-                setCardBackgroundColor(MaterialColors.getColor(context, com.google.android.material.R.attr.colorSurfaceContainerLow, 0))
-                addView(FrameLayout(context).apply { tag = "native_content" }, FrameLayout.LayoutParams(-1, -1))
+            clipChildren = false; clipToPadding = false
+            addView(FrameLayout(context).apply {
+                tag = "native_content"; clipChildren = false; clipToPadding = false
             }, FrameLayout.LayoutParams(-1, -1))
             accessibilityDelegate = object : View.AccessibilityDelegate() {
                 override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {

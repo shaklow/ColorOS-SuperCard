@@ -19,6 +19,9 @@ internal class NativeGestureViewport(context: Context, private val events: Event
         fun drag(distance: Float)
         fun end(distance: Float, velocity: Float, cancel: Boolean)
         fun queue(delta: Int)
+        fun inside(x: Int, y: Int): Boolean = true
+        fun interrupt(): Boolean = false
+        fun content(): View? = null
     }
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
     private var tracker: VelocityTracker? = null
@@ -28,13 +31,17 @@ internal class NativeGestureViewport(context: Context, private val events: Event
     private var rejected = false
     private var blocked = false
     private var suppress = false
+    private var outside = false
     init { isClickable = true }
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
             tracker?.recycle(); tracker = VelocityTracker.obtain()
             startX = event.rawX; startY = event.rawY; dragging = false; rejected = false; suppress = false
             blocked = events.busy()
-            rejected = protectedAt(this, event.rawX.toInt(), event.rawY.toInt())
+            outside = !events.inside(event.rawX.toInt(), event.rawY.toInt())
+            rejected = outside ||
+                protectedAt(events.content() ?: this, event.rawX.toInt(), event.rawY.toInt())
+            if (!blocked && !rejected && events.interrupt()) dragging = events.begin()
         }
         tracker?.addMovement(event)
         if (event.pointerCount > 1) {
@@ -49,13 +56,14 @@ internal class NativeGestureViewport(context: Context, private val events: Event
         }
     }
     override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
+        if (outside) return true
         if (blocked || suppress) return true
         if (dragging) return true
         if (rejected || event.actionMasked != MotionEvent.ACTION_MOVE) return false
         val x = event.rawX - startX; val y = event.rawY - startY
         if (abs(y) > slop && abs(y) >= abs(x)) { rejected = true; return false }
         if (abs(x) > slop && abs(x) > abs(y) * 1.2f) {
-            if (scrollableAt(this, event.rawX.toInt(), event.rawY.toInt(), if (x > 0) -1 else 1)) { rejected = true; return false }
+            if (scrollableAt(events.content() ?: this, event.rawX.toInt(), event.rawY.toInt(), if (x > 0) -1 else 1)) { rejected = true; return false }
             dragging = events.begin()
             if (dragging) { parent?.requestDisallowInterceptTouchEvent(true); events.drag(x) }
             return dragging

@@ -7,6 +7,7 @@ import android.os.ParcelFileDescriptor;
 import java.io.FileInputStream;
 import android.content.Context;
 import android.graphics.Rect;
+import android.graphics.PixelFormat;
 import android.os.SystemClock;
 import android.util.DisplayMetrics;
 import android.view.Choreographer;
@@ -21,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /** Real input monitor, secure Kotlin window, live swipe/cancel/animation and lifecycle checks. */
 final class NativeCoreCheck implements AutoCloseable {
@@ -32,6 +34,8 @@ final class NativeCoreCheck implements AutoCloseable {
     private SystemGestureInput input;
     private View root;
     private FrameLayout body;
+    private View underlay;
+    private final AtomicInteger underlayDowns = new AtomicInteger(), underlayUps = new AtomicInteger();
     private String previousOverlay;
     private Float previousAnimationScale;
     private Integer previousMonitorPermission;
@@ -59,6 +63,22 @@ final class NativeCoreCheck implements AutoCloseable {
         main(() -> {
             previousAnimationScale = (Float) ValueAnimator.class.getMethod("getDurationScale").invoke(null);
             ValueAnimator.class.getMethod("setDurationScale", float.class).invoke(null, 1f);
+            // A real lower window catches click-through, including taps above the card stage.
+            underlay = new View(context) {
+                @Override public boolean onTouchEvent(MotionEvent event) {
+                    if (event.getActionMasked() == MotionEvent.ACTION_DOWN) underlayDowns.incrementAndGet();
+                    if (event.getActionMasked() == MotionEvent.ACTION_UP) underlayUps.incrementAndGet();
+                    return true;
+                }
+            };
+            WindowManager.LayoutParams background = new WindowManager.LayoutParams(-1, -1,
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                            | WindowManager.LayoutParams.FLAG_SECURE, PixelFormat.TRANSLUCENT);
+            background.setFitInsetsTypes(0);
+            background.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            background.setTitle("SuperCardNativeTouchUnderlay");
+            context.getSystemService(WindowManager.class).addView(underlay, background);
             host = new NativeCardHost(context, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, () -> allowed.get());
             Field field = NativeCardHost.class.getDeclaredField("root"); field.setAccessible(true); root = (View) field.get(host);
             body = root.findViewWithTag("native_content");
@@ -89,6 +109,11 @@ final class NativeCoreCheck implements AutoCloseable {
             edgePull(40);
             await(() -> !host.getShowing(), "Short edge pull did not cancel");
             assertEmpty();
+            // A deliberate slow pull followed by a pause must still open.
+            edgePull(145);
+            awaitSettled("dhu");
+            main(() -> host.hide());
+            assertEmpty();
             main(() -> {
                 openingFrames.clear();
                 frameProbe = new Choreographer.FrameCallback() {
@@ -112,11 +137,34 @@ final class NativeCoreCheck implements AutoCloseable {
             awaitSettled("dhu");
         }
         main(() -> {
-            if (!(body.getChildAt(0) instanceof DhuPayView)) throw new AssertionError("Native campus card missing");
+            if (!(front() instanceof DhuPayView)) throw new AssertionError("Native campus card missing");
             WindowManager.LayoutParams params = (WindowManager.LayoutParams) root.getLayoutParams();
             if ((params.flags & WindowManager.LayoutParams.FLAG_SECURE) == 0) throw new AssertionError("Native window is not secure");
+            if ((params.flags & (WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL | WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH)) != 0)
+                throw new AssertionError("Native window allows outside touches to pass through");
+            DisplayMetrics metrics = new DisplayMetrics();
+            context.getSystemService(WindowManager.class).getDefaultDisplay().getRealMetrics(metrics);
+            NativeCardLayout layout = NativeCardLayout.Companion.measure(metrics.widthPixels, metrics.heightPixels, metrics.density);
+            View card = front();
+            if (!card.getClipToOutline()) throw new AssertionError("Individual card outline is not clipped");
+            int[] xy = new int[2]; card.getLocationOnScreen(xy);
+            if (card.getWidth() != layout.getWidth() || card.getHeight() != layout.getHeight()
+                    || xy[0] != layout.getLeft() || xy[1] != metrics.heightPixels - layout.getBottom() - layout.getHeight())
+                throw new AssertionError("Card geometry differs from OEM: " + xy[0] + "," + xy[1] + " " + card.getWidth() + "x" + card.getHeight());
+            if (root.getWidth() != metrics.widthPixels || root.getHeight() != metrics.heightPixels
+                    || body.getBackground() != null || body.getClipChildren())
+                throw new AssertionError("Native stage clips moving cards or leaves a fixed background");
+            if (body.getChildCount() != 2 || !(body.getChildAt(1) instanceof NativeLensCard)
+                    || body.getChildAt(1).getScaleX() >= 1f || body.getChildAt(1).getTranslationX() <= 0f)
+                throw new AssertionError("Actual rear card is missing from the idle stack");
+            android.util.Log.i("SuperCardNativeTest", "OEM bounds: " + xy[0] + "," + xy[1] + " " + card.getWidth() + "x" + card.getHeight());
         });
         inputEnabled.set(false);
+        // Exercise actual content at the top, middle and bottom, including the LENS ScrollView/buttons.
+        for (int y : new int[]{120, 250, 410}) {
+            swipe(235, y, 35, y, 7, 40); awaitSettled("camera");
+            swipe(45, y, 235, y, 7, 40); awaitSettled("dhu");
+        }
         // A vertical scroll must stay with the content, even if it later drifts horizontally.
         int[] vertical = new int[1];
         main(() -> {
@@ -127,6 +175,7 @@ final class NativeCoreCheck implements AutoCloseable {
                     return true;
                 }
             };
+            scroll.setElevation(40 * context.getResources().getDisplayMetrics().density);
             body.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
         });
         swipe(180, 100, 184, 270, 6, 70);
@@ -135,34 +184,109 @@ final class NativeCoreCheck implements AutoCloseable {
             body.removeViewAt(body.getChildCount() - 1);
         });
         int[] cancelled = new int[1], clicked = new int[1];
-        main(() -> body.addView(new View(context) {
+        main(() -> {
+            View child = new View(context) {
             @Override public boolean onTouchEvent(MotionEvent event) {
                 if (event.getActionMasked() == MotionEvent.ACTION_CANCEL) cancelled[0]++;
                 if (event.getActionMasked() == MotionEvent.ACTION_UP) clicked[0]++;
                 return true;
             }
-        }, new FrameLayout.LayoutParams(-1, -1)));
+            };
+            child.setElevation(40 * context.getResources().getDisplayMetrics().density);
+            body.addView(child, new FrameLayout.LayoutParams(-1, -1));
+        });
+        await(() -> body.getChildAt(body.getChildCount() - 1).getWidth() > 0, "Touch fixture did not lay out");
         // Short drag springs back; the child receives CANCEL rather than an accidental click.
         swipe(220, 210, 195, 210, 5, 80);
         awaitSettled("dhu");
         main(() -> {
             if (cancelled[0] != 1 || clicked[0] != 0 || body.getChildCount() != 2)
-                throw new AssertionError("Cancelled swipe lost content ownership or clicked the child");
+                throw new AssertionError("Cancelled swipe: child CANCEL=" + cancelled[0] + " UP=" + clicked[0]
+                        + " mounted=" + body.getChildCount() + " selected=" + host.getSelected());
         });
         // Same physical stream now commits a page; old content survives until settling completes.
+        List<Float> outgoingFrames = new ArrayList<>();
+        main(() -> {
+            View old = front();
+            frameProbe = new Choreographer.FrameCallback() {
+                @Override public void doFrame(long time) {
+                    if (old.isAttachedToWindow() && old.getX() < 0) outgoingFrames.add(old.getX());
+                    Choreographer.getInstance().postFrameCallback(this);
+                }
+            };
+            Choreographer.getInstance().postFrameCallback(frameProbe);
+        });
         swipe(235, 210, 35, 210, 7, 40);
         awaitSettled("camera");
         main(() -> {
-            if (!(body.getChildAt(0) instanceof NativeLensCard) || body.getChildCount() != 1)
+            Choreographer.getInstance().removeFrameCallback(frameProbe); frameProbe = null;
+            if (outgoingFrames.size() < 2) throw new AssertionError("Whole outgoing card never left its original panel: " + outgoingFrames);
+            if (!(front() instanceof NativeLensCard) || body.getChildCount() != 2)
                 throw new AssertionError("Native swipe did not switch real card content");
         });
         swipe(40, 210, 240, 210, 7, 40);
         awaitSettled("dhu");
-        // Rapid consecutive commands queue a reverse transition, without detaching the window.
+        // Reverse during live settling: new input owns the current frame immediately, with the same views.
+        AtomicReference<View> campus = new AtomicReference<>(), lens = new AtomicReference<>();
+        main(() -> { campus.set(body.getChildAt(0)); lens.set(body.getChildAt(1)); host.move(1); });
+        SystemClock.sleep(90);
+        swipe(45, 250, 235, 250, 7, 8);
+        awaitSettled("dhu");
+        for (int repeat = 0; repeat < 4; repeat++) {
+            swipe(235, 250, 35, 250, 7, 4);
+            swipe(45, 250, 235, 250, 7, 4);
+        }
+        awaitSettled("dhu");
+        main(() -> {
+            if (body.getChildAt(0) != campus.get() || body.getChildAt(1) != lens.get())
+                throw new AssertionError("Consecutive swipe recreated a live card");
+        });
+        main(() -> host.move(1));
+        awaitSettled("camera");
+        AtomicBoolean sawRollback = new AtomicBoolean();
+        main(() -> {
+            frameProbe = new Choreographer.FrameCallback() {
+                @Override public void doFrame(long time) {
+                    try {
+                        Field field = NativeCardHost.class.getDeclaredField("scroll"); field.setAccessible(true);
+                        float scroll = field.getFloat(host);
+                        if (host.getShowing() && root.getTranslationX() > 1 && scroll < front().getWidth() * .5f)
+                            sawRollback.set(true);
+                    } catch (Exception error) { throw new AssertionError(error); }
+                    Choreographer.getInstance().postFrameCallback(this);
+                }
+            };
+            Choreographer.getInstance().postFrameCallback(frameProbe);
+        });
+        int[] blank = new int[2];
+        main(() -> {
+            body.getLocationOnScreen(blank);
+            blank[0] = root.getWidth() / 2;
+            blank[1] /= 2; // Above the card, where the old limited-height window passed taps through.
+        });
+        int downsBefore = underlayDowns.get(), upsBefore = underlayUps.get();
+        long outside = SystemClock.uptimeMillis();
+        inject(outside, MotionEvent.ACTION_DOWN, blank[0], blank[1]);
+        inject(outside, MotionEvent.ACTION_UP, blank[0], blank[1]);
+        await(() -> !host.getShowing(), "Second-card outside dismissal did not finish");
+        if (underlayDowns.get() != downsBefore || underlayUps.get() != upsBefore)
+            throw new AssertionError("Dismissal tap reached the underlying window");
+        main(() -> { Choreographer.getInstance().removeFrameCallback(frameProbe); frameProbe = null; });
+        if (!sawRollback.get()) throw new AssertionError("Second card left as a flat row instead of rolling back into a stack");
+        assertEmpty();
+        long afterDismiss = SystemClock.uptimeMillis();
+        inject(afterDismiss, MotionEvent.ACTION_DOWN, blank[0], blank[1]);
+        inject(afterDismiss, MotionEvent.ACTION_UP, blank[0], blank[1]);
+        await(() -> underlayDowns.get() == downsBefore + 1 && underlayUps.get() == upsBefore + 1,
+                "Underlying control did not become clickable after dismissal");
+        android.util.Log.i("SuperCardNativeTest", "Blank dismissal consumed DOWN/UP; underlying control restored after close");
+        main(() -> host.show(List.of("dhu", "camera"), "dhu"));
+        awaitSettled("dhu");
+        // Commands can also reverse immediately, without waiting for the former target.
         main(() -> { host.move(1); host.move(-1); });
         awaitSettled("dhu");
         main(() -> {
-            if (!root.isAttachedToWindow() || body.getChildCount() != 1) throw new AssertionError("Rapid switching leaked content/window");
+            if (!root.isAttachedToWindow() || body.getChildCount() != 2) throw new AssertionError("Rapid switching leaked content/window");
             host.move(1); allowed.set(false); host.move(-1);
         });
         assertEmpty();
@@ -192,11 +316,19 @@ final class NativeCoreCheck implements AutoCloseable {
         motion(x, y, x - distanceDp * metrics.density, y, 6, 70, true);
     }
     private void swipe(int x1, int y1, int x2, int y2, int steps, int delay) throws Exception {
+        test.waitForIdleSync();
         AtomicReference<int[]> location = new AtomicReference<>();
-        main(() -> { int[] xy = new int[2]; root.getLocationOnScreen(xy); location.set(xy); });
+        main(() -> {
+            int[] xy = new int[2]; body.getLocationOnScreen(xy);
+            xy[0] += (body.getWidth() - front().getWidth()) / 2; location.set(xy);
+        });
         float d = test.getTargetContext().getResources().getDisplayMetrics().density;
         int[] xy = location.get();
         motion(xy[0] + x1 * d, xy[1] + y1 * d, xy[0] + x2 * d, xy[1] + y2 * d, steps, delay, false);
+    }
+    private View front() throws Exception {
+        Field field = NativeCardHost.class.getDeclaredField("current"); field.setAccessible(true);
+        return ((NativeCardHost.Content) field.get(host)).getView();
     }
     private void motion(float x1, float y1, float x2, float y2, int steps, int delay, boolean edge) throws Exception {
         long down = SystemClock.uptimeMillis();
@@ -254,7 +386,14 @@ final class NativeCoreCheck implements AutoCloseable {
             test.runOnMainSync(() -> {
                 if (frameProbe != null) Choreographer.getInstance().removeFrameCallback(frameProbe);
                 try { if (input != null) input.close(); }
-                finally { if (host != null) { host.close(); if (host.getShowing()) throw new AssertionError("Native host leaked window"); } }
+                finally {
+                    try { if (host != null) { host.close(); if (host.getShowing()) throw new AssertionError("Native host leaked window"); } }
+                    finally {
+                        if (underlay != null && underlay.isAttachedToWindow())
+                            test.getTargetContext().getSystemService(WindowManager.class).removeViewImmediate(underlay);
+                        underlay = null;
+                    }
+                }
             });
         } finally {
             try {
