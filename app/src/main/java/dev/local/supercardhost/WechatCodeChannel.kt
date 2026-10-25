@@ -34,11 +34,13 @@ internal class WechatCodeChannel(private val context: Context, private val funct
     val connected get() = synchronized(this) { hello && !order.closed }
     fun bind(display: Int) {
         require(display > 0 && WechatCodeWire.function(function) && user >= 0)
-        check(Process.myUid() == Process.SYSTEM_UID) { "Native code receiver requires SystemUI" }
+        val systemUiUid = WechatCodeIdentity.systemUi(context)
+        check(Process.myUid() == systemUiUid) { "SystemUI UID mismatch actual=${Process.myUid()} expected=$systemUiUid" }
         val resolved = PayUserSettings.forUser(context, user).packageManager.getApplicationInfo("com.tencent.mm", 0).uid
-        check(resolved / 100000 == user && resolved % 100000 >= 10000)
-        synchronized(this) { check(!order.closed && this.display < 0); this.display = display; uid = resolved }
+        check(resolved / 100000 == user && resolved % 100000 >= 10000) { "WeChat UID mismatch user=$user uid=$resolved" }
+        synchronized(this) { check(!order.closed && this.display < 0) { "Code channel already bound or closed" }; this.display = display; uid = resolved }
         Registry.add(display, this)
+        android.util.Log.i("SuperCardNativePay", "Native code channel bound to display=$display user=$user")
     }
     private fun locked() = context.getSystemService(KeyguardManager::class.java)?.let { it.isKeyguardLocked || it.isDeviceLocked } != false
     private fun packet() = Bundle().apply { putBinder("port", this@WechatCodeChannel); putString("nonce", nonce); putInt("display", display) }
@@ -102,8 +104,10 @@ internal class WechatCodeChannel(private val context: Context, private val funct
         fun add(display: Int, channel: WechatCodeChannel) {
             PayUserRouting.setLaunchDecorator { intent, app, user, id ->
                 val owner = channels[id]
-                if (owner != null && app == PayUserSettings.WECHAT && owner.user == user && !owner.order.closed)
+                if (owner != null && app == PayUserSettings.WECHAT && owner.user == user && !owner.order.closed) {
                     intent.putExtra(WechatCodeWire.EXTRA, owner.packet())
+                    android.util.Log.i("SuperCardNativePay", "Native code port attached to embedded launch display=$id")
+                }
             }
             channels.put(display, channel)?.close()
         }

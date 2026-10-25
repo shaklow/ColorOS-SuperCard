@@ -52,6 +52,7 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
     private val codeWatchdog = Runnable { abandonNativeCode("source heartbeat timed out") }
     private val refresh = Runnable { stopPayment(); readConfiguration() }
     private val revealPage = Runnable { if (session != null && active && revealGate.reveal(SystemClock.elapsedRealtime())) render() }
+    private val nativeReady get() = paintedCode?.let { codeChannel?.current(it) == true && session?.matchesCode(it) == true } == true
     val interactive get() = paintedCode == null && revealGate.revealed && session?.interactive(touchEnabled) == true
     init {
         addView(surface, LayoutParams(-1, -1))
@@ -112,7 +113,6 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
             putStringArray("types", choices.map { it.type }.toTypedArray())
             putStringArray("titles", choices.map { it.title }.toTypedArray())
             putString("selected", selected)
-            val nativeReady = paintedCode?.let { codeChannel?.current(it) == true && session?.matchesCode(it) == true } == true
             putBoolean("loading", selected != null && !nativeReady && (!revealGate.revealed || codeChannel?.connected == true))
             message?.let { putString("message", it) }
         })
@@ -173,6 +173,11 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
                         try {
                             val root = codeSurface ?: (MaterialUiArchive.create(context, MaterialUiArchive.Operation.WECHAT_CODE) as View).also {
                                 codeSurface = it; it.setOnClickListener { fullscreen() }
+                                try {
+                                    it.findViewWithTag<ImageView>("wechat_native_icon").apply {
+                                        setImageDrawable(context.packageManager.getApplicationIcon("com.tencent.mm")); visibility = View.VISIBLE
+                                    }
+                                } catch (_: Exception) { }
                                 viewport.addView(it, LayoutParams(-1, -1))
                             }
                             root.findViewWithTag<ImageView>("wechat_native_qr").setImageDrawable(qr)
@@ -181,10 +186,10 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
                             val first = paintedCode == null
                             paintedCode = value; paintedValue = value.value
                             main.removeCallbacks(codeTimeout); render()
-                            Log.i("SuperCardNativePay", if (first) "Native WeChat code display active" else "Native WeChat code refreshed")
+                            Log.i("SuperCardNativePay", if (first) "Native WeChat code display active (layout 2)" else "Native WeChat code refreshed")
                         } catch (_: Exception) { abandonNativeCode() }
                     }
-                } catch (_: Exception) { main.post { if (codeChannel === channel) abandonNativeCode() } }
+                } catch (_: Exception) { main.post { if (codeChannel === channel && generation == codeGeneration) abandonNativeCode() } }
             }
         } catch (_: RuntimeException) { abandonNativeCode() }
     }
@@ -273,7 +278,7 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
                         }
                     }, 500)
                     main.postDelayed({
-                        if (session === next && !revealGate.revealed) fail(IllegalStateException("支付页面尚未就绪，请重试"))
+                        if (session === next && !revealGate.revealed && !nativeReady) fail(IllegalStateException("支付页面尚未就绪，请重试"))
                     }, 10_000)
                 } catch (error: Exception) { fail(error) }
                 catch (error: LinkageError) { fail(error) }
@@ -334,6 +339,6 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
     override fun close() { scope.detach(); active = false; stopPayment() }
     companion object {
         private val CODE_WORK = ThreadPoolExecutor(1, 1, 30, TimeUnit.SECONDS, ArrayBlockingQueue(2),
-            { work -> Thread(work, "SuperCardPayCode").apply { isDaemon = true } })
+            { work -> Thread(work, "SuperCardPayCode").apply { isDaemon = true } }).apply { allowCoreThreadTimeOut(true) }
     }
 }

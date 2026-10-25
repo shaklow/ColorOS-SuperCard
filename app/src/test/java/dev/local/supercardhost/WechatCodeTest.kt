@@ -52,19 +52,22 @@ class WechatCodeTest {
         } finally { data.recycle(); reply.recycle(); ShadowBinder.setCallingUid(Process.myUid()) }
     }
     @Test fun reverseChallengeRequiresSystemUidAndExactSessionThenCloseIsFinal() {
+        for (trustedUid in listOf(1000, 10242)) {
         var stopped = 0
-        val control = WechatCodeControl(nonce, 9, challenge) { stopped++ }
+        val control = WechatCodeControl(nonce, 9, challenge, trustedUid) { stopped++ }
         assertFalse(control.authorized)
         assertFalse(call(control, 10123)); assertFalse(control.authorized)
-        assertFalse(call(control, 1000, token = "c".repeat(64)))
-        assertFalse(call(control, 1000, display = 0))
-        assertFalse(call(control, 1000, proof = nonce))
-        assertFalse(call(control, 1000, extra = true)); assertFalse(control.authorized)
-        assertTrue(call(control, 1000)); assertTrue(control.authorized)
+        assertFalse(call(control, trustedUid, token = "c".repeat(64)))
+        assertFalse(call(control, trustedUid, display = 0))
+        assertFalse(call(control, trustedUid, proof = nonce))
+        assertFalse(call(control, trustedUid, extra = true)); assertFalse(control.authorized)
+        if (trustedUid != 1000) assertFalse(call(control, 1000))
+        assertTrue(call(control, trustedUid)); assertTrue(control.authorized)
         assertFalse(call(control, 10123, WechatCodeWire.STOP)); assertTrue(control.authorized)
-        assertTrue(call(control, 1000, WechatCodeWire.STOP)); assertFalse(control.authorized); assertEquals(1, stopped)
-        assertFalse(call(control, 1000)); assertFalse(control.authorized)
-        assertFalse(call(control, 1000, WechatCodeWire.STOP)); assertEquals(1, stopped)
+        assertTrue(call(control, trustedUid, WechatCodeWire.STOP)); assertFalse(control.authorized); assertEquals(1, stopped)
+        assertFalse(call(control, trustedUid)); assertFalse(control.authorized)
+        assertFalse(call(control, trustedUid, WechatCodeWire.STOP)); assertEquals(1, stopped)
+        }
     }
     @Test fun oversizedAndWrongInterfacePacketsAreRejected() {
         val data = Parcel.obtain()

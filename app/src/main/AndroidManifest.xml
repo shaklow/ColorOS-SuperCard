@@ -2,6 +2,7 @@
     <permission android:name="dev.local.supercardhost.permission.READ_MEMORY_TRANSFER"
         android:protectionLevel="signature" />
     <queries>
+        <package android:name="com.android.systemui" />
         <package android:name="com.coloros.smartsidebar" />
         <package android:name="com.finshell.wallet" />
         <package android:name="com.oplus.aimemory" />

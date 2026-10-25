@@ -21,7 +21,8 @@ final class NativeWechatCodeCheck {
     }
     void run() throws Exception {
         String nonce = "a".repeat(64), challenge = "b".repeat(64);
-        WechatCodeControl control = new WechatCodeControl(nonce, 9, challenge, () -> { throw new AssertionError("Foreign process stopped code source"); });
+        int systemUiUid = WechatCodeIdentity.INSTANCE.systemUi(test.getTargetContext());
+        WechatCodeControl control = new WechatCodeControl(nonce, 9, challenge, systemUiUid, () -> { throw new AssertionError("Foreign process stopped code source"); });
         Parcel data = Parcel.obtain(), reply = Parcel.obtain();
         try {
             WechatCodeWire.INSTANCE.header(data, nonce, 9); data.writeString(challenge);

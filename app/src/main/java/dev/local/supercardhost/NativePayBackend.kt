@@ -22,7 +22,10 @@ internal class NativePayBackend @JvmOverloads constructor(private val context: C
     }
     override fun bind(owner: NativePayDisplayOwner, function: String, user: Int) {
         PayRuntimeBridge.beginNative(owner, function, user)
-        try { codes?.bind(owner.displayId) } catch (_: Exception) { codes?.close() }
+        try { codes?.bind(owner.displayId) } catch (error: Exception) {
+            android.util.Log.i("SuperCardNativePay", "Native code binding unavailable: ${error.javaClass.simpleName}: ${error.message}")
+            codes?.close()
+        }
     }
     override fun unbind(owner: NativePayDisplayOwner) {
         try { codes?.close() } finally { PayRuntimeBridge.endNative(owner) }

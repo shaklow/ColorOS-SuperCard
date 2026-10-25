@@ -22,8 +22,9 @@ import org.robolectric.annotation.GraphicsMode
 class PayCodeDrawableTest {
     @Test fun moduleDrawingsDecodeAtCardSizesAndNeverPaintOutsideTheirBounds() {
         val value = "100000000000000001" // Synthetic fixture, never a captured payment credential.
-        for (density in listOf(1, 2, 3)) for (qr in listOf(true, false)) {
-            val width = 230 * density; val height = (if (qr) 210 else 42) * density
+        for (density in listOf(1, 2, 3)) for (qr in listOf(true, false)) for (compact in listOf(false, true)) {
+            val width = (if (compact) 210 else 230) * density
+            val height = (if (qr) if (compact) 165 else 210 else 38) * density
             val bitmap = Bitmap.createBitmap(width + 20, height + 20, Bitmap.Config.ARGB_8888)
             try {
                 val canvas = Canvas(bitmap); canvas.drawColor(Color.MAGENTA)

@@ -118,16 +118,20 @@ internal object WechatCodeHook {
     private inline fun safely(action: () -> Unit) { try { action() } catch (_: Throwable) { } }
     private fun connect(activity: Activity) {
         val data = activity.intent?.getBundleExtra(WechatCodeWire.EXTRA) ?: return
+        android.util.Log.i("SuperCardWechatCode", "Native code port received on display=${activity.display?.displayId}")
         activity.intent.removeExtra(WechatCodeWire.EXTRA)
         val receiver = data.getBinder("port") ?: return
         val nonce = data.getString("nonce") ?: return
         val display = data.getInt("display", -1)
         if (!WechatCodeWire.token(nonce) || display <= 0 || activity.display?.displayId != display) return
-        val port = Port(receiver, nonce, display)
-        if (port.connect()) ports.put(display, port)?.close()
+        val port = Port(receiver, nonce, display, WechatCodeIdentity.systemUi(activity))
+        if (port.connect()) {
+            ports.put(display, port)?.close()
+            android.util.Log.i("SuperCardWechatCode", "Native code peer authorized display=$display")
+        } else android.util.Log.i("SuperCardWechatCode", "Native code peer unavailable display=$display")
     }
     private class Slot(val activity: WeakReference<Activity>, val image: WeakReference<ImageView>, val value: String)
-    private class Port(private val receiver: IBinder, private val nonce: String, val display: Int) {
+    private class Port(private val receiver: IBinder, private val nonce: String, val display: Int, systemUiUid: Int) {
         private val challenge = WechatCodeWire.nonce()
         @Volatile private var closed = false
         private var current: WeakReference<Activity>? = null
@@ -141,7 +145,7 @@ internal object WechatCodeHook {
             override fun run() { if (!closed) { safely { publish() }; main.postDelayed(this, 250) } }
         }
         private val death = IBinder.DeathRecipient { main.post { close() } }
-        private val control = WechatCodeControl(nonce, display, challenge) { main.post { close() } }
+        private val control = WechatCodeControl(nonce, display, challenge, systemUiUid) { main.post { close() } }
         fun connect(): Boolean {
             val data = Parcel.obtain(); val reply = Parcel.obtain()
             try {
