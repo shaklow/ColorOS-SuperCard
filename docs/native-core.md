@@ -60,6 +60,10 @@ PJZ110 的真实触摸在 `pilferPointers` 并出现新窗口后，会重发原�
 
 NativePayCard / PayCardSurface 管理快捷入口和支付页，NativePaySession / NativePayBackend 管理安全副屏、触摸、当前任务与释放，复用原启动协议与现有用户路由。仅启用已迁移且已就绪的 PAY、校园卡和 LENS 时自动接手；未迁移卡片或 PAY 功能保留原路由。完整边界见 [自研支付卡](native-pay.md)。
 
+## 0.2.39：卡券迁入自研核心
+
+NativeCouponCard / CouponCardSurface / NativeCouponSession 接入 `staging`，原配置排序、窗口几何与外层动效保持一致。列表按可见项复用视图，二维码后台准备；钱包连接、账号确认与补码继续复用既有客户端。整包刷新由自研窗口身份持有，切卡不重复查询，迟到的旧窗口事件不能清掉当前会话。支持详情、返回、钱包查看、原图与本地移除，详细边界见[自研卡券](native-coupon.md)。原完整卡包仍为启用记忆等未迁移卡片的配置保留。
+
 ## 归属与系统边界
 
 - NativeCardDeck 是不依赖 Android 的 Kotlin 内容状态机，负责单一活动卡片、失败回滚、关闭和旧异步结果令牌。
