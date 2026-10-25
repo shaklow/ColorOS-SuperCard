@@ -131,6 +131,24 @@ final class PayUserRouting {
         return routed.toBundle();
     }
 
+    static Context sdkContext(Context host, int user, int display) throws ReflectiveOperationException {
+        return new UserContext(host, host, user, display, true);
+    }
+
+    /** Local to native embedded launches. Explicit fullscreen options retain their own animation. */
+    static void startEmbedded(Context host, Intent source, Bundle options, String app, int user, int display)
+            throws ReflectiveOperationException {
+        ActivityOptions explicit = options == null ? null : (ActivityOptions) ActivityOptions.class
+                .getMethod("fromBundle", Bundle.class).invoke(null, options);
+        int target = explicit == null ? display : explicit.getLaunchDisplayId();
+        if (display <= 0 || target == 0) { start(host, source, options, app, user, display); return; }
+        ActivityOptions quiet = ActivityOptions.makeCustomAnimation(host, 0, 0);
+        quiet.setLaunchDisplayId(target >= 0 ? target : display);
+        Bundle routed = options == null ? new Bundle() : new Bundle(options);
+        routed.putAll(quiet.toBundle());
+        start(host, new Intent(source).addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION), routed, app, user, display);
+    }
+
     static void start(Context host, Intent source, Bundle options, String app, int user, int display)
             throws ReflectiveOperationException {
         String pkg = PayUserSettings.packageName(app);
@@ -181,10 +199,15 @@ final class PayUserRouting {
         private final Context host, userContext;
         private final int user, display;
         private final long generation;
+        private final boolean quiet;
 
         UserContext(Context base, Context host, int user, int display) throws ReflectiveOperationException {
+            this(base, host, user, display, false);
+        }
+        UserContext(Context base, Context host, int user, int display, boolean quiet) throws ReflectiveOperationException {
             super(base);
             this.host = host; this.user = user; this.display = display;
+            this.quiet = quiet;
             generation = PayRuntimeBridge.getLaunchGeneration();
             userContext = PayUserSettings.forUser(host, user);
         }
@@ -204,7 +227,8 @@ final class PayUserRouting {
             try {
                 // An asynchronous SDK job must not reopen a released/replaced virtual display.
                 checkActive();
-                start(host, intent, options, PayUserSettings.WECHAT, user, display);
+                if (quiet) startEmbedded(host, intent, options, PayUserSettings.WECHAT, user, display);
+                else start(host, intent, options, PayUserSettings.WECHAT, user, display);
             } catch (ReflectiveOperationException error) {
                 failed(host, error);
                 throw new IllegalStateException("微信所选用户启动失败", error);
