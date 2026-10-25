@@ -48,8 +48,8 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
     private var paintedValue: String? = null
     private var codeWork: Future<*>? = null
     private var codeGeneration = 0L
-    private val codeTimeout = Runnable { abandonNativeCode() }
-    private val codeWatchdog = Runnable { abandonNativeCode() }
+    private val codeTimeout = Runnable { abandonNativeCode("initial code timed out") }
+    private val codeWatchdog = Runnable { abandonNativeCode("source heartbeat timed out") }
     private val refresh = Runnable { stopPayment(); readConfiguration() }
     private val revealPage = Runnable { if (session != null && active && revealGate.reveal(SystemClock.elapsedRealtime())) render() }
     val interactive get() = paintedCode == null && revealGate.revealed && session?.interactive(touchEnabled) == true
@@ -136,6 +136,7 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
         channel = WechatCodeChannel(context, function, user, object : WechatCodeChannel.Listener {
             override fun connected() {
                 if (codeChannel !== channel || !active) return
+                Log.i("SuperCardNativePay", "WeChat code channel connected")
                 main.removeCallbacks(codeTimeout); main.postDelayed(codeTimeout, 8000); render()
             }
             override fun code(value: WechatCodeChannel.Code) {
@@ -170,17 +171,17 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
                         if (generation != codeGeneration || codeChannel !== channel || !active ||
                             !channel.current(value) || session?.matchesCode(value) != true) return@post
                         try {
-                        val root = codeSurface ?: (MaterialUiArchive.create(context, MaterialUiArchive.Operation.WECHAT_CODE) as View).also {
-                            codeSurface = it; it.setOnClickListener { fullscreen() }
-                            viewport.addView(it, LayoutParams(-1, -1))
-                        }
-                        root.findViewWithTag<ImageView>("wechat_native_qr").setImageDrawable(qr)
-                        root.findViewWithTag<ImageView>("wechat_native_barcode").setImageDrawable(bar)
-                        root.visibility = View.VISIBLE
-                        val first = paintedCode == null
-                        paintedCode = value; paintedValue = value.value
-                        main.removeCallbacks(codeTimeout); render()
-                        if (first) Log.i("SuperCardNativePay", "Native WeChat code display active")
+                            val root = codeSurface ?: (MaterialUiArchive.create(context, MaterialUiArchive.Operation.WECHAT_CODE) as View).also {
+                                codeSurface = it; it.setOnClickListener { fullscreen() }
+                                viewport.addView(it, LayoutParams(-1, -1))
+                            }
+                            root.findViewWithTag<ImageView>("wechat_native_qr").setImageDrawable(qr)
+                            root.findViewWithTag<ImageView>("wechat_native_barcode").setImageDrawable(bar)
+                            root.visibility = View.VISIBLE
+                            val first = paintedCode == null
+                            paintedCode = value; paintedValue = value.value
+                            main.removeCallbacks(codeTimeout); render()
+                            Log.i("SuperCardNativePay", if (first) "Native WeChat code display active" else "Native WeChat code refreshed")
                         } catch (_: Exception) { abandonNativeCode() }
                     }
                 } catch (_: Exception) { main.post { if (codeChannel === channel) abandonNativeCode() } }
@@ -196,8 +197,9 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
         }
         codeSurface = null; paintedCode = null; paintedValue = null
     }
-    private fun abandonNativeCode() {
+    private fun abandonNativeCode(reason: String = "source unavailable") {
         val old = codeChannel; codeChannel = null; old?.close()
+        if (old != null) Log.i("SuperCardNativePay", "Original WeChat display fallback: $reason")
         pendingCode = null; clearCodeArtwork()
         main.removeCallbacks(codeTimeout); main.removeCallbacks(codeWatchdog)
         render()

@@ -23,6 +23,9 @@ def defined_classes(dex):
 
 def verify_archive(host_apk):
     with zipfile.ZipFile(host_apk) as host:
+        scopes = host.read('META-INF/xposed/scope.list').decode('utf-8').splitlines()
+        if 'com.tencent.mm' not in scopes:
+            raise ValueError('WeChat adapter missing from compiled module scope')
         archive = host.read('assets/dhu-ui.apk')
         for name in host.namelist():
             if name.startswith('classes') and name.endswith('.dex'):

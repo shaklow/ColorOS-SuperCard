@@ -274,9 +274,12 @@ def main():
     if 'assets/memory-plugin.apk' not in files: raise ValueError('Missing embedded memory plugin')
     if 'assets/dhu-ui.apk' not in files: raise ValueError('Missing embedded M3E UI archive')
     verification['embeddedDhuUiSha256'] = hashlib.sha256(files['assets/dhu-ui.apk']).hexdigest()
-    scopes = ['com.android.systemui', 'dev.local.supercardhost', 'com.coloros.smartsidebar',
-              'com.oplus.aimemory', 'com.finshell.wallet']
-    files['META-INF/xposed/scope.list'] = ('\n'.join(scopes) + '\n').encode()
+    # The compiled host is the single scope source. A duplicated list silently dropped
+    # newly added adapters (notably WeChat) from otherwise valid unified builds.
+    scopes = files['META-INF/xposed/scope.list'].decode('utf-8').splitlines()
+    if not {'com.android.systemui', 'dev.local.supercardhost', 'com.tencent.mm'}.issubset(scopes):
+        raise ValueError('Incomplete compiled module scope')
+    verification['moduleScopes'] = scopes
     for dex in sorted(dex_out.glob('classes*.dex')): files[dex.name] = dex.read_bytes()
     unsigned = out / 'supercard-unified-unsigned.apk'
     with zipfile.ZipFile(unsigned, 'w') as target:
