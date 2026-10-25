@@ -43,6 +43,8 @@ internal class NativePaySession(
         private set
     override val displayId get() = if (closed) -1 else display?.id ?: -1
     val hasPage get() = !closed && page != null
+    fun matchesCode(value: WechatCodeChannel.Code) = !closed && !handoff && displayId > 0 && WechatCodeWire.function(function) &&
+        task == value.task && page == value.page && WechatCodeWire.page(page)
     val reachedPage get() = !closed && NativePayPolicy.reached(page)
     val needsRetry get() = !closed && !retried && page?.className == "com.alipay.mobile.quinox.SchemeLauncherActivity"
     fun interactive(enabled: Boolean) = !closed && !handoff && displayId > 0 && NativePayPolicy.touch(function, page, enabled)

@@ -23,6 +23,9 @@ def defined_classes(dex):
 
 def verify_archive(host_apk):
     with zipfile.ZipFile(host_apk) as host:
+        scopes = host.read('META-INF/xposed/scope.list').decode('utf-8').splitlines()
+        if 'com.tencent.mm' not in scopes:
+            raise ValueError('WeChat adapter missing from compiled module scope')
         archive = host.read('assets/dhu-ui.apk')
         for name in host.namelist():
             if name.startswith('classes') and name.endswith('.dex'):
@@ -47,6 +50,7 @@ def verify_archive(host_apk):
                            b'Ldev/local/supercardui/CardDesign;',
                            b'Ldev/local/supercardui/NativeCardSurface;',
                            b'Ldev/local/supercardui/CouponCardSurface;',
+                           b'Ldev/local/supercardui/WechatCodeSurface;',
                            b'Ldev/local/supercardui/CardIconButton;',
                            b'Lcom/google/android/material/button/MaterialButton;',
                            b'Lcom/google/android/material/appbar/MaterialToolbar;',

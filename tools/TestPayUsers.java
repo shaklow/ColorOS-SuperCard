@@ -101,10 +101,21 @@ public final class TestPayUsers {
         check(Context.options.getInt("animation", -1) == 0
                 && Context.launched.flags == (original.flags | Intent.FLAG_ACTIVITY_NO_ANIMATION), "native entry still animates");
         check(original.flags == 0x14000000, "native entry mutated SDK intent");
+        final int[] decorated = {0};
+        PayUserRouting.setLaunchDecorator((intent, app, user, display) -> {
+            check(app.equals("wechat") && user == 991 && display == 10, "capability decorator lost launch identity");
+            intent.extras.put("synthetic_capability", true); decorated[0]++;
+        });
+        embedded.startActivity(original);
+        check(decorated[0] == 1 && Context.launched.extras.containsKey("synthetic_capability")
+                && !original.extras.containsKey("synthetic_capability"), "capability not scoped to copied embedded intent");
         embedded.startActivity(original, full);
+        check(decorated[0] == 1 && !Context.launched.extras.containsKey("synthetic_capability"), "fullscreen received embedded capability");
         check(Context.options.getInt("display") == 0 && Context.options.getInt("animation") == 7
                 && Context.launched.flags == original.flags, "native entry suppressed explicit fullscreen animation");
         PayUserRouting.startEmbedded(host, original, null, "wechat", 991, 0);
+        check(decorated[0] == 1, "main display received embedded capability");
+        PayUserRouting.setLaunchDecorator(null);
         check(Context.options.getInt("display") == 0 && Context.launched.flags == original.flags, "display 0 entry changed");
         PayUserRouting.startEmbedded(host, new Intent().setData(Uri.parse("alipays://platformapi/startapp?appId=20000056")),
                 null, "alipay", 998, 10);

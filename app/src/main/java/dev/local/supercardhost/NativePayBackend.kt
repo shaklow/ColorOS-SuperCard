@@ -7,7 +7,7 @@ import android.view.MotionEvent
 import android.view.Surface
 
 /** SystemUI owns launching/input; the authenticated root backend creates the fixed PAY display. */
-internal class NativePayBackend(private val context: Context) : NativePaySession.Backend {
+internal class NativePayBackend @JvmOverloads constructor(private val context: Context, private val codes: WechatCodeChannel? = null) : NativePaySession.Backend {
     private val input = checkNotNull(context.getSystemService(Context.INPUT_SERVICE))
     private val inject = input.javaClass.getMethod("injectInputEvent", InputEvent::class.java, Int::class.javaPrimitiveType)
     private val displayId = InputEvent::class.java.getMethod("setDisplayId", Int::class.javaPrimitiveType)
@@ -20,8 +20,16 @@ internal class NativePayBackend(private val context: Context) : NativePaySession
             override fun close() = UiCompat.releaseVirtualDisplay(display)
         }
     }
-    override fun bind(owner: NativePayDisplayOwner, function: String, user: Int) = PayRuntimeBridge.beginNative(owner, function, user)
-    override fun unbind(owner: NativePayDisplayOwner) = PayRuntimeBridge.endNative(owner)
+    override fun bind(owner: NativePayDisplayOwner, function: String, user: Int) {
+        PayRuntimeBridge.beginNative(owner, function, user)
+        try { codes?.bind(owner.displayId) } catch (error: Exception) {
+            android.util.Log.i("SuperCardNativePay", "Native code binding unavailable: ${error.javaClass.simpleName}: ${error.message}")
+            codes?.close()
+        }
+    }
+    override fun unbind(owner: NativePayDisplayOwner) {
+        try { codes?.close() } finally { PayRuntimeBridge.endNative(owner) }
+    }
     override fun launch(function: String, user: Int, display: Int) = NativePayLauncher.launch(context, function, user, display)
     override fun retry(function: String, user: Int, display: Int) = NativePayLauncher.launch(context, function, user, display, true)
     override fun inject(event: MotionEvent, display: Int): Boolean {

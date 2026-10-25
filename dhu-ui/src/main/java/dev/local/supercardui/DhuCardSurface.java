@@ -37,6 +37,7 @@ public final class DhuCardSurface {
     public static void renderLens(View root, android.os.Bundle values) { LensCardSurface.render(root, values); }
 
     public static View createPay(Context resources) { return PayCardSurface.create(resources); }
+    public static View createWechatCode(Context resources) { return WechatCodeSurface.create(resources); }
     public static void renderPay(View root, Bundle state) { PayCardSurface.render(root, state); }
     public static void bindPay(View root, java.util.function.Consumer<Bundle> action) { PayCardSurface.bind(root, action); }
 

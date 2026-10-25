@@ -49,6 +49,22 @@ class NativePaySessionTest {
     private fun page(name: String) = ComponentName("com.tencent.mm", name)
     private val wallet = page("com.tencent.mm.plugin.offline.ui.WalletOfflineCoinPurseUI")
 
+    @Test fun nativeCodeMustMatchTheLiveTaskAndCannotSurviveAuthenticationOrClose() {
+        val backend = Backend(); val session = start(backend)
+        fun code(task: Int = 42, component: ComponentName = wallet) = WechatCodeChannel.Code("100000000000000001", component, task, 1, 0)
+        assertFalse(session.matchesCode(code()))
+        session.resumed(wallet, 42); assertTrue(session.matchesCode(code()))
+        assertFalse(session.matchesCode(code(43)))
+        assertFalse(session.matchesCode(code(component = page("com.tencent.mm.framework.app.UIPageFragmentActivity"))))
+        backend.id = -1; assertFalse(session.matchesCode(code())); backend.id = 9
+        session.resumed(page("com.tencent.mm.plugin.walletlock.fingerprint.ui.FingerprintWalletLockUI"), 42)
+        assertFalse(session.matchesCode(code()))
+        session.resumed(wallet, 42); assertFalse(session.matchesCode(code()))
+        session.close(); assertFalse(session.matchesCode(code()))
+        val scan = start(Backend(), function = "wx_scan"); scan.resumed(wallet, 42)
+        assertFalse(scan.matchesCode(code())); scan.close()
+    }
+
     @Test fun launchesCapturedAccountAndInvalidatesOnlyItsOwnSession() {
         val backend = Backend(); val session = start(backend)
         assertSame(session, backend.state.snapshot.manager)

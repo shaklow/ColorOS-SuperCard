@@ -20,6 +20,7 @@ android {
 dependencies {
     implementation("com.google.android.material:material:1.14.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("com.google.zxing:core:3.5.3")
     testImplementation("org.robolectric:robolectric:4.16.1")
 }
 

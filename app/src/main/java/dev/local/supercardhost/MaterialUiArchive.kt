@@ -27,6 +27,7 @@ internal object MaterialUiArchive {
         RENDER_NATIVE_CARD("renderNativeCard", Void.TYPE, View::class.java, Bundle::class.java),
         LENS("createLens", View::class.java, Context::class.java),
         PAY("createPay", View::class.java, Context::class.java),
+        WECHAT_CODE("createWechatCode", View::class.java, Context::class.java),
         RENDER_PAY("renderPay", Void.TYPE, View::class.java, Bundle::class.java),
         BIND_PAY("bindPay", Void.TYPE, View::class.java, Consumer::class.java),
         COUPON("createCoupon", View::class.java, Context::class.java),

@@ -38,15 +38,22 @@ import java.util.function.BiConsumer;
 public final class SettingsStartupTest extends Instrumentation {
     private boolean secureNative;
     private boolean nativeOnly;
+    private boolean wechatOnly;
     @Override public void onCreate(Bundle arguments) {
         secureNative = arguments != null && "true".equals(arguments.getString("secureNative"));
         nativeOnly = arguments != null && "true".equals(arguments.getString("nativeOnly"));
+        wechatOnly = arguments != null && "true".equals(arguments.getString("wechatOnly"));
         super.onCreate(arguments); start();
     }
 
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
+            if (wechatOnly) {
+                new NativeWechatCodeCheck(this).run();
+                result.putString("stream", "Native WeChat Canvas drawing, secure window, identity denial and cleanup passed\n");
+                finish(Activity.RESULT_OK, result); return;
+            }
             if (nativeOnly) {
                 try (NativeCoreCheck nativeCore = new NativeCoreCheck(this, secureNative)) { nativeCore.run(); }
                 result.putString("stream", "Native card layout, live stack, screen-edge travel, swipes and cleanup passed\n");
@@ -63,11 +70,13 @@ public final class SettingsStartupTest extends Instrumentation {
             try (NativeCoreCheck nativeCore = new NativeCoreCheck(this, secureNative)) {
                 nativeCore.run();
                 new NativeCouponCheck(this).run();
+                new NativeWechatCodeCheck(this).run();
                 android.util.Log.i("SuperCardNativeTest", "Native regression passed; starting secure Lens display check");
                 checkLensDisplay(nativeCore.container());
             }
             result.putString("stream", "Settings startup: 4 entry points passed\nCard management: persistence, ordering and legacy entry passed\nGesture settings: session, preview ownership and new page passed\nFloating cards: window embedding passed\nFloating lifecycle: detach/reattach passed\nLens display: embedded activity and touch passed\nRoot display: callback wrapper passed\nNative core: secure window, switching and lock cleanup passed\nNative PAY: mixed deck, secure session touch and cleanup passed\n"
                     + "Native coupons: secure detail, wallet updates, local removal and cleanup passed\n"
+                    + "Native WeChat: Canvas codes, secure window, foreign UID denial and cleanup passed\n"
                     + (secureNative ? "Secure native display: actual secure secondary display and touch passed\nNative gestures: monitored edge pull, swipe, cancellation and animations passed\n" : ""));
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
