@@ -37,7 +37,7 @@
 ## 安装
 
 1. 从 [Releases](https://github.com/Maga-King/ColorOS-SuperCard/releases) 安装统一 APK。包名为 `dev.local.supercardhost`，原卡包界面、插件和兼容模块已合并。
-2. 在支持 libxposed API 102 的 [Vector](https://github.com/JingMatrix/Vector) 中启用模块，勾选：系统界面、超级卡包自身、智能侧边栏、小布记忆、钱包。
+2. 在支持 libxposed API 102 的 [Vector](https://github.com/JingMatrix/Vector) 中启用模块，勾选：系统界面、超级卡包自身、智能侧边栏、小布记忆、钱包。使用微信原生付款码时还需勾选微信，并重新启动微信；未启用该作用域会沿用副屏画面。
 3. 打开超级卡包，在 root 管理器中授予 `dev.local.supercardhost` root 权限，然后重启。APK 自己启动安全虚拟显示后端，无需另外安装后端模块。
 4. 在智能侧边栏设置中打开超级卡包并调节呼出位置。记忆、支付与票券功能需要对应原应用安装并完成自身的登录、协议和授权设置。
 

@@ -19,6 +19,10 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
 import java.util.function.Consumer
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.Future
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 /** Kotlin PAY view/session owner. The private UI only renders framework state and callbacks. */
 internal class NativePayCard(context: Context, private val owner: CardWindowOwner) : FrameLayout(context), AutoCloseable {
@@ -37,9 +41,18 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
     private var request = 0L
     private var preparing = false
     private var message: String? = null
+    private var codeChannel: WechatCodeChannel? = null
+    private var codeSurface: View? = null
+    private var pendingCode: WechatCodeChannel.Code? = null
+    private var paintedCode: WechatCodeChannel.Code? = null
+    private var paintedValue: String? = null
+    private var codeWork: Future<*>? = null
+    private var codeGeneration = 0L
+    private val codeTimeout = Runnable { abandonNativeCode() }
+    private val codeWatchdog = Runnable { abandonNativeCode() }
     private val refresh = Runnable { stopPayment(); readConfiguration() }
     private val revealPage = Runnable { if (session != null && active && revealGate.reveal(SystemClock.elapsedRealtime())) render() }
-    val interactive get() = revealGate.revealed && session?.interactive(touchEnabled) == true
+    val interactive get() = paintedCode == null && revealGate.revealed && session?.interactive(touchEnabled) == true
     init {
         addView(surface, LayoutParams(-1, -1))
         MaterialUiArchive.update(surface, MaterialUiArchive.Operation.BIND_PAY, Consumer<Bundle> { event ->
@@ -99,7 +112,8 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
             putStringArray("types", choices.map { it.type }.toTypedArray())
             putStringArray("titles", choices.map { it.title }.toTypedArray())
             putString("selected", selected)
-            putBoolean("loading", selected != null && !revealGate.revealed)
+            val nativeReady = paintedCode?.let { codeChannel?.current(it) == true && session?.matchesCode(it) == true } == true
+            putBoolean("loading", selected != null && !nativeReady && (!revealGate.revealed || codeChannel?.connected == true))
             message?.let { putString("message", it) }
         })
     }
@@ -115,6 +129,78 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
                     surface.findViewWithTag<ImageView>(tag)?.setImageDrawable(module.getDrawable(id))
             }
         } catch (error: Exception) { Log.w("SuperCardNativePay", "Original shortcut icons unavailable", error) }
+    }
+    private fun createCodeChannel(function: String, user: Int): WechatCodeChannel? {
+        if (!WechatCodeWire.function(function)) return null
+        lateinit var channel: WechatCodeChannel
+        channel = WechatCodeChannel(context, function, user, object : WechatCodeChannel.Listener {
+            override fun connected() {
+                if (codeChannel !== channel || !active) return
+                main.removeCallbacks(codeTimeout); main.postDelayed(codeTimeout, 8000); render()
+            }
+            override fun code(value: WechatCodeChannel.Code) {
+                if (codeChannel !== channel || !active) return
+                pendingCode = value
+                main.removeCallbacks(codeWatchdog); main.postDelayed(codeWatchdog, 15_000)
+                reconcileCode()
+            }
+            override fun cleared() {
+                if (codeChannel === channel) abandonNativeCode()
+            }
+        })
+        return channel
+    }
+    private fun reconcileCode() {
+        val value = pendingCode ?: return
+        val channel = codeChannel ?: return
+        if (!active || !channel.current(value) || session?.matchesCode(value) != true) {
+            if (paintedCode != null) clearCodeArtwork()
+            return
+        }
+        if (paintedValue == value.value && codeSurface?.visibility == View.VISIBLE) {
+            paintedCode = value; render(); return
+        }
+        codeWork?.cancel(true); CODE_WORK.purge()
+        val generation = ++codeGeneration
+        try {
+            codeWork = CODE_WORK.submit {
+                try {
+                    val qr = PayCodeDrawable.qr(value.value); val bar = PayCodeDrawable.barcode(value.value)
+                    main.post {
+                        if (generation != codeGeneration || codeChannel !== channel || !active ||
+                            !channel.current(value) || session?.matchesCode(value) != true) return@post
+                        try {
+                        val root = codeSurface ?: (MaterialUiArchive.create(context, MaterialUiArchive.Operation.WECHAT_CODE) as View).also {
+                            codeSurface = it; it.setOnClickListener { fullscreen() }
+                            viewport.addView(it, LayoutParams(-1, -1))
+                        }
+                        root.findViewWithTag<ImageView>("wechat_native_qr").setImageDrawable(qr)
+                        root.findViewWithTag<ImageView>("wechat_native_barcode").setImageDrawable(bar)
+                        root.visibility = View.VISIBLE
+                        val first = paintedCode == null
+                        paintedCode = value; paintedValue = value.value
+                        main.removeCallbacks(codeTimeout); render()
+                        if (first) Log.i("SuperCardNativePay", "Native WeChat code display active")
+                        } catch (_: Exception) { abandonNativeCode() }
+                    }
+                } catch (_: Exception) { main.post { if (codeChannel === channel) abandonNativeCode() } }
+            }
+        } catch (_: RuntimeException) { abandonNativeCode() }
+    }
+    private fun clearCodeArtwork() {
+        codeGeneration++; codeWork?.cancel(true); codeWork = null; CODE_WORK.purge()
+        codeSurface?.let {
+            it.findViewWithTag<ImageView>("wechat_native_qr").setImageDrawable(null)
+            it.findViewWithTag<ImageView>("wechat_native_barcode").setImageDrawable(null)
+            if (it.parent === viewport) viewport.removeView(it)
+        }
+        codeSurface = null; paintedCode = null; paintedValue = null
+    }
+    private fun abandonNativeCode() {
+        val old = codeChannel; codeChannel = null; old?.close()
+        pendingCode = null; clearCodeArtwork()
+        main.removeCallbacks(codeTimeout); main.removeCallbacks(codeWatchdog)
+        render()
     }
     private fun choose(function: String) {
         if (!active || choices.none { it.type == function }) return
@@ -142,6 +228,7 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
                         RootDisplayClient.requestBackendForPayment(); main.postDelayed(this, 100); return
                     }
                     val user = PayUserSettings.resolve(context, function)
+                    codeChannel = createCodeChannel(function, user)
                     val metrics = DisplayMetrics()
                     context.getSystemService(android.view.WindowManager::class.java).defaultDisplay.getRealMetrics(metrics)
                     val size = NativePayGeometry.measure(target.width, target.height, metrics.widthPixels, metrics.densityDpi,
@@ -150,9 +237,10 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
                     buffer.setDefaultBufferSize(size.width, size.height)
                     output = Surface(buffer)
                     lateinit var next: NativePaySession
-                    next = NativePaySession(NativePayBackend(context), function, user, object : NativePaySession.Events {
+                    next = NativePaySession(NativePayBackend(context, codeChannel), function, user, object : NativePaySession.Events {
                         override fun changed() {
                             if (session !== next) return
+                            if (paintedCode?.let { !next.matchesCode(it) } == true) clearCodeArtwork()
                             if (!revealGate.revealed) {
                                 revealGate.page(SystemClock.elapsedRealtime(), next.reachedPage, next.needsRetry)
                                 main.removeCallbacks(revealPage)
@@ -161,7 +249,7 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
                             if (next.needsRetry) main.postDelayed({
                                 if (session === next && next.pageGeneration == page) try { next.retry() } catch (error: Exception) { fail(error) }
                             }, 1500)
-                            render()
+                            reconcileCode(); render()
                         }
                         override fun fullscreen(delay: Long) { main.postDelayed({ if (session === next) this@NativePayCard.fullscreen() }, delay) }
                         override fun closed() {
@@ -208,6 +296,8 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
     }
     private fun stopPayment(reset: Boolean = true) {
         request++; main.removeCallbacksAndMessages(null)
+        val previousChannel = codeChannel; codeChannel = null; previousChannel?.close()
+        pendingCode = null; clearCodeArtwork()
         val old = session; session = null
         val oldTexture = texture; texture = null; preparing = false
         try { old?.close() }
@@ -240,4 +330,8 @@ internal class NativePayCard(context: Context, private val owner: CardWindowOwne
     }
     override fun onDetachedFromWindow() { try { close() } finally { super.onDetachedFromWindow() } }
     override fun close() { scope.detach(); active = false; stopPayment() }
+    companion object {
+        private val CODE_WORK = ThreadPoolExecutor(1, 1, 30, TimeUnit.SECONDS, ArrayBlockingQueue(2),
+            { work -> Thread(work, "SuperCardPayCode").apply { isDaemon = true } })
+    }
 }

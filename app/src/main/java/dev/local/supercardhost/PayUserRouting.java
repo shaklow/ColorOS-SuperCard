@@ -26,6 +26,9 @@ final class PayUserRouting {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static long lastFailure;
     static boolean ready;
+    interface LaunchDecorator { void decorate(Intent intent, String app, int user, int display); }
+    private static volatile LaunchDecorator launchDecorator;
+    static void setLaunchDecorator(LaunchDecorator decorator) { launchDecorator = decorator; }
 
     private PayUserRouting() { }
 
@@ -146,7 +149,10 @@ final class PayUserRouting {
         quiet.setLaunchDisplayId(target >= 0 ? target : display);
         Bundle routed = options == null ? new Bundle() : new Bundle(options);
         routed.putAll(quiet.toBundle());
-        start(host, new Intent(source).addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION), routed, app, user, display);
+        Intent embedded = new Intent(source).addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION);
+        LaunchDecorator decorator = launchDecorator;
+        if (decorator != null) decorator.decorate(embedded, app, user, target >= 0 ? target : display);
+        start(host, embedded, routed, app, user, display);
     }
 
     static void start(Context host, Intent source, Bundle options, String app, int user, int display)

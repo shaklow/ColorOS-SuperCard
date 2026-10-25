@@ -22,6 +22,10 @@ public final class VectorEntry extends XposedModule {
 
     @Override
     public void onPackageReady(PackageReadyParam param) {
+        if ("com.tencent.mm".equals(param.getPackageName()) && param.isFirstPackage()) {
+            WechatCodeHook.install(this, param.getClassLoader());
+            return;
+        }
         if ("com.finshell.wallet".equals(param.getPackageName()) && param.isFirstPackage()) {
             // The wallet's AppComponentFactory may replace the default loader.
             // Native account/ticket reflection needs the final application loader.
