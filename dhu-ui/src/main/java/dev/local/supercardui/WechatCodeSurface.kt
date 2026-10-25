@@ -1,7 +1,6 @@
 package dev.local.supercardui
 
 import android.content.Context
-import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
@@ -19,8 +18,9 @@ object WechatCodeSurface {
         val d = CardDesign(context)
         val root = FrameLayout(context).apply {
             tag = "wechat_native_code"
-            background = d.shape(ColorStateList.valueOf(d.color(com.google.android.material.R.attr.colorSurfaceContainerLow)), R.dimen.card_inner_corner)
-            clipToOutline = true
+            // The owning viewport supplies the rounded clip. A second antialiased
+            // outline exposes its black/video backing as a thin fringe.
+            setBackgroundColor(d.color(com.google.android.material.R.attr.colorSurfaceContainerLow))
             setPadding(d.dp(8), d.dp(8), d.dp(8), d.dp(8))
             contentDescription = "微信付款码，点击在微信中管理"
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
